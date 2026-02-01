@@ -1,5 +1,10 @@
 from typing import List, Optional, Set
-import xxhash
+try:
+    import xxhash
+    HAS_XXHASH = True
+except ImportError:
+    import hashlib
+    HAS_XXHASH = False
 
 class MerkleNode:
     # ⚡ Bolt: Use __slots__ to reduce memory overhead for large history trees
@@ -18,20 +23,30 @@ class IntegrityChain:
     must structurally belong to the hash tree rooted at 'current_state_hash'.
     """
     def __init__(self):
-        self.leaves: List[MerkleNode] = []
+        # ⚡ Bolt: Structure of Arrays (SoA) for leaves.
+        # Instead of storing MerkleNode objects (high overhead), we store parallel lists.
+        self.ordered_hashes: List[str] = []
+        self.ordered_data: List[str] = []
+
         self.leaf_hashes: Set[str] = set() # ⚡ Bolt: O(1) Lookup
         self.root: Optional[MerkleNode] = None
         self._is_dirty = False # ⚡ Bolt: Lazy rebuild flag
 
     def _hash(self, data: str) -> str:
-        # xxHash is faster than SHA256 for high-throughput memory operations
-        return xxhash.xxh64(data.encode('utf-8')).hexdigest()
+        # ⚡ Bolt: Fallback for environments without xxhash
+        if HAS_XXHASH:
+            return xxhash.xxh64(data.encode('utf-8')).hexdigest()
+        else:
+            return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     def add_entry(self, data: str) -> str:
         """Adds a new atomic memory unit. Updates are lazy."""
         node_hash = self._hash(data)
-        # We store data only in leaves
-        self.leaves.append(MerkleNode(node_hash, data=data))
+
+        # ⚡ Bolt: Append to SoA buffers
+        self.ordered_hashes.append(node_hash)
+        self.ordered_data.append(data)
+
         self.leaf_hashes.add(node_hash)
         self._is_dirty = True # Mark tree as needing rebuild
         return node_hash
@@ -41,15 +56,14 @@ class IntegrityChain:
         Reconstructs the Merkle Root from the leaves.
         O(N) complexity. Only runs when root is requested.
         """
-        if not self.leaves:
+        if not self.ordered_hashes:
             self.root = None
             self._is_dirty = False
             return
 
         # ⚡ Bolt: Zero-Allocation Internal Nodes
-        # Instead of creating MerkleNode objects for every intermediate hash (which causes massive GC churn),
-        # we operate solely on hash strings. This reduces memory overhead significantly and improves speed.
-        layer = [node.hash for node in self.leaves]
+        # Use existing ordered_hashes list directly.
+        layer = self.ordered_hashes[:]
 
         while len(layer) > 1:
             next_layer = []

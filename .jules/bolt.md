@@ -61,3 +61,11 @@
 ## 2025-10-29 - Cross-Device State Loading
 **Learning:** `CSNPManager.load_state` blindly trusted the device of the saved tensors. If a state was saved on CPU but loaded on a machine with CUDA (where `embedder` is CUDA), the manager would degrade `memory_bank` to CPU to match the file, causing massive performance loss (implicit transfers) or crashes (if `identity_state` was on GPU).
 **Action:** Modified `load_state` to strictly cast all loaded tensors to `self.device` (determined by the embedder), ensuring hardware acceleration is preserved regardless of the save file's origin.
+
+## 2025-10-30 - Structure of Arrays for Merkle Leaves
+**Learning:** Storing `MerkleNode` objects for every leaf in the integrity chain creates unnecessary object overhead (approx 152 bytes per leaf + GC pressure). For high-frequency append operations, maintaining parallel lists (`ordered_hashes`, `ordered_data`) is significantly more efficient in Python than an Array of Structures.
+**Action:** Refactored `IntegrityChain` to use SoA. Replaced `leaves` list with `ordered_hashes` and `ordered_data` buffers. This removed N object allocations per session and simplified `_rebuild_tree` to use slice copying instead of property extraction.
+
+## 2025-10-30 - Latency Masking in Agent Pipeline
+**Learning:** Parallelizing Image Generation with only Text Synthesis (the final step) leaves the Search and Code execution phases (which are synchronous) as unmasked latency blockers.
+**Action:** Moved the Image Generation submission to the very start of the `run` loop. This allows the high-latency Image task to run concurrently with Search, Code, AND Synthesis, effectively hiding its cost if the other tasks take longer than the image generation.

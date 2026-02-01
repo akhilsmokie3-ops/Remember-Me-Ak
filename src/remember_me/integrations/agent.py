@@ -65,6 +65,17 @@ class SovereignAgent:
         artifacts = []
         tool_outputs = []
 
+        # ⚡ Bolt: Submit Image Generation EARLY (Latency Hiding)
+        # Run in parallel with Search and Code phases.
+        img_future = None
+        img_path = "dream_output.png"
+
+        if "IMAGE" in detected_intents:
+            print(f"🎨 Orchestrator: Visualizing (Parallel)...")
+            # We use persistent ThreadPoolExecutor (IO-bound/GIL-releasing tasks)
+            img_prompt = user_input
+            img_future = self._executor.submit(self.tools.generate_image, img_prompt, img_path)
+
         # 1. SEARCH PHASE (Information Gathering)
         if "SEARCH" in detected_intents:
             query = user_input # In a complex agent, we'd extract the query. For now, full prompt is decent.
@@ -105,17 +116,6 @@ class SovereignAgent:
         # 3. SYNTHESIS & IMAGE PHASE (Parallel Execution)
         # Combine tool outputs with original context
         augmented_context = context_str + "\n".join(tool_outputs)
-
-        # ⚡ Bolt: Run Image Generation in parallel with Text Generation
-        # This reduces total latency from (Text + Image) to max(Text, Image)
-        img_future = None
-        img_path = "dream_output.png"
-
-        if "IMAGE" in detected_intents:
-            print(f"🎨 Orchestrator: Visualizing (Parallel)...")
-            # We use persistent ThreadPoolExecutor (IO-bound/GIL-releasing tasks)
-            img_prompt = user_input
-            img_future = self._executor.submit(self.tools.generate_image, img_prompt, img_path)
 
         # Main Thread: Generate Text Response
         final_response = self.engine.generate_response(user_input, augmented_context)

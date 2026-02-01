@@ -307,7 +307,8 @@ class CSNPManager:
         Saves: Memory Bank (Active), Identity State, Text Buffer, Integrity Chain.
         """
         # Extract Integrity Chain Data (Leaves)
-        chain_data = [node.data for node in self.chain.leaves]
+        # ⚡ Bolt: Access SoA buffer directly
+        chain_data = self.chain.ordered_data
 
         state_dict = {
             # ⚡ Bolt: Save only active memories to save space

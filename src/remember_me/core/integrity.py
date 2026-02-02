@@ -32,11 +32,12 @@ class IntegrityChain:
         self.root: Optional[MerkleNode] = None
         self._is_dirty = False # ⚡ Bolt: Lazy rebuild flag
 
-    def _hash(self, data: str) -> str:
-        # ⚡ Bolt: Fallback for environments without xxhash
-        if HAS_XXHASH:
+    # ⚡ Bolt: Resolve hash function once at class definition time to avoid conditional overhead
+    if HAS_XXHASH:
+        def _hash(self, data: str) -> str:
             return xxhash.xxh64(data.encode('utf-8')).hexdigest()
-        else:
+    else:
+        def _hash(self, data: str) -> str:
             return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     def add_entry(self, data: str) -> str:

@@ -263,6 +263,21 @@ class CSNPManager:
         # ⚡ Bolt: Optimized verification loop (List Comp + Hoisted Set Lookup)
         # 20% faster than zip + method call loop
         known_hashes = self.chain.leaf_hashes
+
+        # ⚡ Bolt: Fast Path Check (Avoids List Allocation)
+        # Only use fast path if buffers are synchronized
+        if len(self.text_buffer) == len(self.hash_buffer):
+            all_valid = True
+            for h in self.hash_buffer:
+                if h not in known_hashes:
+                    all_valid = False
+                    break
+
+            if all_valid:
+                self._context_cache = "\n".join(self.text_buffer)
+                return self._context_cache
+
+        # Slow Path: Filter invalid memories
         valid_texts = [
             text for text, h in zip(self.text_buffer, self.hash_buffer)
             if h in known_hashes

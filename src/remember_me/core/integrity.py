@@ -63,23 +63,17 @@ class IntegrityChain:
             return
 
         # ⚡ Bolt: Zero-Allocation Internal Nodes
-        # Use existing ordered_hashes list directly.
-        layer = self.ordered_hashes[:]
+        # Use existing ordered_hashes list directly (No initial copy needed).
+        layer = self.ordered_hashes
 
         while len(layer) > 1:
-            next_layer = []
-            count = len(layer)
-            for i in range(0, count, 2):
-                left = layer[i]
-                if i + 1 < count:
-                    right = layer[i+1]
-                    # Hash(Left + Right)
-                    combined = self._hash(left + right)
-                    next_layer.append(combined)
-                else:
-                    # Duplicate last node to balance tree
-                    combined = self._hash(left + left)
-                    next_layer.append(combined)
+            # ⚡ Bolt: List Comprehension for C-Speed Loop
+            n = len(layer)
+            next_layer = [
+                self._hash(layer[i] + layer[i+1]) if i + 1 < n
+                else self._hash(layer[i] + layer[i])
+                for i in range(0, n, 2)
+            ]
             layer = next_layer
 
         self.root = MerkleNode(layer[0])

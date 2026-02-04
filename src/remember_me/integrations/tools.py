@@ -1,11 +1,13 @@
 import torch
-from duckduckgo_search import DDGS
 
 # Lazy load heavy dependencies
 _diffusers_imported = False
 _pyttsx3_imported = False
+_ddgs_imported = False
+
 AutoPipelineForText2Image = None
 pyttsx3 = None
+DDGS = None
 
 def _import_diffusers():
     global _diffusers_imported, AutoPipelineForText2Image
@@ -27,6 +29,16 @@ def _import_pyttsx3():
         except ImportError:
             print("❌ pyttsx3 not found. Install with `pip install pyttsx3`")
 
+def _import_ddgs():
+    global _ddgs_imported, DDGS
+    if not _ddgs_imported:
+        try:
+            from duckduckgo_search import DDGS as D
+            DDGS = D
+            _ddgs_imported = True
+        except ImportError:
+            print("❌ duckduckgo_search not found. Install with `pip install duckduckgo-search`")
+
 
 class ToolArsenal:
     """
@@ -37,7 +49,8 @@ class ToolArsenal:
     """
 
     def __init__(self):
-        self.ddgs = DDGS()
+        # ⚡ Bolt: Lazy load DDGS to avoid network/session overhead at startup
+        self.ddgs = None
         self.image_pipe = None
         self.tts_engine = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -46,6 +59,16 @@ class ToolArsenal:
         """
         Performs a web search using DuckDuckGo.
         """
+        _import_ddgs()
+        if not _ddgs_imported:
+            return "Web Search unavailable."
+
+        if self.ddgs is None:
+            try:
+                self.ddgs = DDGS()
+            except Exception as e:
+                return f"Failed to initialize Search: {e}"
+
         try:
             results = self.ddgs.text(query, max_results=max_results)
             if not results:

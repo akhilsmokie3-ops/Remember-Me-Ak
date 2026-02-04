@@ -22,6 +22,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../src'
 from remember_me.integrations.agent import SovereignAgent
 from remember_me.core.csnp import CSNPManager
 from remember_me.core.embedder import LocalEmbedder
+from remember_me.integrations.tools import ToolArsenal
 
 class TestBoltOptimizations(unittest.TestCase):
 
@@ -43,21 +44,9 @@ class TestBoltOptimizations(unittest.TestCase):
         executor_first = agent._executor
 
         # Simulate run with IMAGE intent
-        # We need to mock _detect_intents because we mocked re and patterns are there,
-        # but regex compiled on imported re might fail if re is not mocked but used?
-        # Actually standard lib re is fine.
-        # But we can just mock _detect_intents for simplicity.
         agent._detect_intents = MagicMock(return_value=["IMAGE"])
         agent.engine.generate_response.return_value = "Response"
         self.tools.generate_image.return_value = "Image Generated"
-
-        # We assume run() submits to executor.
-        # Since we mocked concurrent.futures inside the module if we could...
-        # But we are testing the structure.
-
-        # NOTE: agent._executor will be a real ThreadPoolExecutor if we don't mock it?
-        # But concurrent.futures is standard lib.
-        # So it will create real threads. This is fine for 1 test.
 
         agent.run("draw cat", "context")
 
@@ -88,7 +77,6 @@ class TestBoltOptimizations(unittest.TestCase):
         # Simulate loaded tensor
         loaded_tensor = MagicMock()
         loaded_tensor.device = 'cuda:0'
-        # Need to allow shape access for validation
         loaded_tensor.shape = [5, 384]
         loaded_tensor.__len__.return_value = 5
 
@@ -97,13 +85,7 @@ class TestBoltOptimizations(unittest.TestCase):
         converted_tensor.device = target_device
         loaded_tensor.to.return_value = converted_tensor
 
-        # Fix formatting for print statement: self.identity_state.norm().item()
-        # The code prints {item:.4f}. So item() must return a float.
-        # loaded_tensor is used as identity_state.
-        # But we assign state_dict["identity_state"].to(self.device) to self.identity_state.
-        # So self.identity_state will be converted_tensor.
         converted_tensor.norm.return_value.item.return_value = 1.0
-        # Also need shape for loaded_size check
         converted_tensor.shape = [5, 384]
 
         state_dict = {
@@ -120,8 +102,57 @@ class TestBoltOptimizations(unittest.TestCase):
             manager.load_state("fake.pt")
 
         # Verify loaded tensor was moved to target device
-        # This asserts that we CALLED .to('cpu') on the object we got from state_dict
         loaded_tensor.to.assert_any_call(target_device)
+
+    def test_tool_arsenal_lazy_ddgs(self):
+        """
+        Verify that ToolArsenal initializes DDGS lazily.
+        """
+        # Create fresh instance
+        tools = ToolArsenal()
+
+        # 1. Verify not initialized initially
+        self.assertIsNone(tools.ddgs, "DDGS should be None on init")
+
+        # 2. Simulate web_search call
+        mock_ddgs_module = sys.modules["duckduckgo_search"]
+        mock_ddgs_cls = MagicMock()
+        mock_ddgs_instance = MagicMock()
+        mock_ddgs_cls.return_value = mock_ddgs_instance
+
+        # Important: The module mock needs to return our class mock when accessed as .DDGS
+        mock_ddgs_module.DDGS = mock_ddgs_cls
+
+        # The instance needs to return a result list
+        mock_ddgs_instance.text.return_value = [{"title": "Test Title", "body": "Test Body"}]
+
+        # We need to ensure _ddgs_imported is reset or handled,
+        # but since we are running in the same process, it might be False initially?
+        # In tools.py: _ddgs_imported = False (module level).
+        # Since imports are cached, reloading might be tricky, but we are just calling the function.
+        # Assuming this is the first time running this test in this process (which it is for the test runner usually).
+        # However, if other tests imported ToolArsenal, the module is loaded.
+        # But _ddgs_imported is a global in tools.py.
+        # We can reset it manually if needed, but 'ToolArsenal' import at top of file sets it to False.
+        # If previous tests called web_search, it might be True.
+        # Let's inspect remember_me.integrations.tools global state if possible, or just rely on the fact that we mocked DDGS.
+
+        # Reset the global flag to ensure we test the import logic
+        import remember_me.integrations.tools as tools_mod
+        tools_mod._ddgs_imported = False
+        tools_mod.DDGS = None
+
+        result = tools.web_search("test query")
+
+        # 3. Verify DDGS was initialized
+        self.assertIsNotNone(tools.ddgs, "DDGS should be initialized after search")
+        # Check if it's our mock instance (might fail if _import_ddgs grabs a different mock object from sys.modules)
+        # But sys.modules["duckduckgo_search"].DDGS is what we set.
+
+        self.assertIn("- Test Title: Test Body", result)
+
+        # Verify call
+        mock_ddgs_instance.text.assert_called_with("test query", max_results=3)
 
 if __name__ == "__main__":
     unittest.main()

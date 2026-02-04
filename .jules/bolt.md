@@ -77,3 +77,7 @@
 ## 2025-10-31 - Reference-Only Integrity Layer
 **Learning:** `IntegrityChain._rebuild_tree` initialized the first layer with `self.ordered_hashes[:]`, creating an unnecessary O(N) copy.
 **Action:** Removed the slice copy. The loop rebinds the `layer` variable to a new list in each iteration, so the original `ordered_hashes` remains safe without copying. Also replaced the explicit `append` loop with a list comprehension for C-speed execution.
+
+## 2025-11-01 - Lazy Search Initialization
+**Learning:** `ToolArsenal` was initializing `DDGS` (DuckDuckGo Search) in its `__init__`, creating network sessions and overhead even if the user only performed local queries. This added unnecessary startup latency and resource usage.
+**Action:** Implemented lazy loading for `DDGS`. Removed the top-level import and eager instantiation. `DDGS` is now imported and initialized only within `web_search()` when actually needed, significantly reducing the initialization footprint of the `SovereignAgent`.

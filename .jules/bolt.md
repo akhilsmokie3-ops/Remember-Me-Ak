@@ -81,3 +81,7 @@
 ## 2025-11-01 - Lazy Search Initialization
 **Learning:** `ToolArsenal` was initializing `DDGS` (DuckDuckGo Search) in its `__init__`, creating network sessions and overhead even if the user only performed local queries. This added unnecessary startup latency and resource usage.
 **Action:** Implemented lazy loading for `DDGS`. Removed the top-level import and eager instantiation. `DDGS` is now imported and initialized only within `web_search()` when actually needed, significantly reducing the initialization footprint of the `SovereignAgent`.
+
+## 2025-11-02 - Zero-Allocation Transport & Argmax Optimization
+**Learning:** `WassersteinMetric.compute_cost_matrix` allocated a new `[N, 1]` tensor for every compression step due to the `x_norm + y_norm` broadcast. Additionally, `_compress` computed the full Softmax distribution even for single-item eviction (`excess=1`), where finding the `argmin(mass)` is mathematically equivalent to finding `argmax(cost)`.
+**Action:** Implemented a pre-allocated `transport_buffer` in `CSNPManager` and updated `WassersteinMetric` to write costs directly into it using `torch.add(..., out=buffer)`. Replaced the Softmax/Sinkhorn calculation with `torch.argmax(cost)` for the steady-state eviction path. This eliminates all tensor allocations in the hot compression loop.

@@ -56,6 +56,9 @@ class CSNPManager:
         # ⚡ Bolt: Pre-computed norms for O(1) cost matrix updates
         self.memory_norms = torch.zeros(self.capacity, 1, device=self.device)
 
+        # ⚡ Bolt: Pre-allocated transport buffer to avoid cost matrix allocation
+        self.transport_buffer = torch.zeros(self.capacity, 1, device=self.device)
+
         self.size = 0 # Current number of active memories
 
         self.text_buffer: List[str] = []
@@ -185,7 +188,19 @@ class CSNPManager:
         # ⚡ Bolt: Identity state is normalized, so ||y||^2 = 1.0.
         # Pass pre-computed norm to save O(D) calculation.
         y_norm = torch.ones(1, 1, device=self.identity_state.device)
-        scores = self.metric.compute_transport_mass(self.identity_state, active_bank, x_norms=active_norms, y_norms=y_norm)
+
+        # ⚡ Bolt: Optimized Cost Calculation (Zero-Allocation)
+        # We compute the cost matrix directly into the pre-allocated transport buffer.
+        active_buffer = self.transport_buffer[:self.size]
+
+        # Calculate Cost Matrix C directly
+        C = self.metric.compute_cost_matrix(
+            active_bank,
+            self.identity_state,
+            x_norm=active_norms,
+            y_norm=y_norm,
+            out=active_buffer
+        )
 
         current_size = self.size
         excess = current_size - self.context_limit
@@ -195,7 +210,12 @@ class CSNPManager:
 
         # ⚡ Bolt: Optimized for single-item eviction (Steady State)
         if excess == 1:
-            remove_idx = torch.argmin(scores).item()
+            # We want to remove the memory with Minimum Mass.
+            # Mass ~ exp(-Cost).
+            # Min Mass corresponds to Max Cost.
+            # So we remove argmax(C).
+            # This avoids Softmax calculation entirely.
+            remove_idx = torch.argmax(C).item()
 
             # Remove from Tensor (Shift Left)
             # bank[i:-1] = bank[i+1:]
@@ -215,6 +235,10 @@ class CSNPManager:
 
         else:
             # Fallback for bulk compression (e.g., after loading large state)
+            # Compute Mass from Cost
+            C.div_(-self.metric.epsilon)
+            scores = F.softmax(C, dim=0).flatten()
+
             _, keep_indices = torch.topk(scores, k=self.context_limit)
             keep_indices, _ = torch.sort(keep_indices) # Maintain chronological order
 
@@ -379,12 +403,20 @@ class CSNPManager:
                 device=self.device,
                 dtype=loaded_bank.dtype
             )
+            # ⚡ Bolt: Expand transport buffer
+            self.transport_buffer = torch.zeros(
+                self.capacity,
+                1,
+                device=self.device,
+                dtype=loaded_bank.dtype
+            )
 
         self.size = loaded_size
         # Ensure self.memory_bank is on self.device (it should be, but just in case)
         if self.memory_bank.device != self.device:
              self.memory_bank = self.memory_bank.to(self.device)
              self.memory_norms = self.memory_norms.to(self.device)
+             self.transport_buffer = self.transport_buffer.to(self.device)
 
         self.memory_bank[:self.size] = loaded_bank
 

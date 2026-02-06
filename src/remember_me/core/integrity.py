@@ -97,3 +97,16 @@ class IntegrityChain:
         Verifies if a specific hash exists in the chain (O(1)).
         """
         return hash_val in self.leaf_hashes
+
+    def load_bulk(self, hashes: List[str], data: List[str]):
+        """
+        ⚡ Bolt: Fast loads the integrity chain from pre-computed hashes.
+        Bypasses O(N) hashing. Assumes inputs are from a trusted save file.
+        """
+        if len(hashes) != len(data):
+            raise ValueError("IntegrityChain load error: Hash/Data count mismatch.")
+
+        self.ordered_hashes.extend(hashes)
+        self.ordered_data.extend(data)
+        self.leaf_hashes.update(hashes)
+        self._is_dirty = True

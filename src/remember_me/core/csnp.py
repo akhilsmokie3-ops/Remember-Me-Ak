@@ -348,6 +348,7 @@ class CSNPManager:
         # Extract Integrity Chain Data (Leaves)
         # ⚡ Bolt: Access SoA buffer directly
         chain_data = self.chain.ordered_data
+        chain_hashes = self.chain.ordered_hashes
 
         state_dict = {
             # ⚡ Bolt: Save only active memories to save space
@@ -357,6 +358,7 @@ class CSNPManager:
             "text_buffer": self.text_buffer,
             "hash_buffer": self.hash_buffer,
             "chain_data": chain_data,
+            "chain_hashes": chain_hashes,
             "config": {
                 "dim": self.dim,
                 "context_limit": self.context_limit
@@ -441,9 +443,14 @@ class CSNPManager:
             print("⚡ Bolt: Regenerating hash buffer for legacy state...")
             self.hash_buffer = []
 
-        for data in state_dict["chain_data"]:
-            if data is not None:
-                self.chain.add_entry(data)
+        # ⚡ Bolt: Fast Path - Load pre-computed hashes if available
+        if "chain_hashes" in state_dict and len(state_dict["chain_hashes"]) == len(state_dict["chain_data"]):
+            self.chain.load_bulk(state_dict["chain_hashes"], state_dict["chain_data"])
+        else:
+            # Legacy Slow Path
+            for data in state_dict["chain_data"]:
+                if data is not None:
+                    self.chain.add_entry(data)
 
         # Sync hash buffer if regenerated
         if not self.hash_buffer:

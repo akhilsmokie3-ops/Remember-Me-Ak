@@ -1,5 +1,16 @@
 # REMEMBER-ME (V2): THE SOVEREIGN STACK
 
+## 💸 SUPPORT THE STUDENT
+I made this free because I believe in open source. But I am a student living off scraps.
+Any help is mondo appreciated!
+[Ko-fi: Support Here](https://ko-fi.com/merchantmohdebug)
+
+## 🚀 THE FUTURE (Help Me Build It)
+Imagine this: **Distributed, Zero-Knowledge Memory Swarms.**
+I have already architected the next-gen kernel for this: **[Project Moonlight](https://github.com/merchantmoh-debug/moonlight-kernel)**.
+It does everything CSNP does, but **40x faster** using a Zero-Copy Wasm Bridge.
+I need compute to build the V4 Protocol ("The Ocean"). Your support makes it happen.
+
 ### The End of Rented Cognition
 
 ```ascii

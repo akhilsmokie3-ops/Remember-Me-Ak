@@ -16,7 +16,7 @@
 
 ## 2025-02-23 - Lazy Dimension Resolution
 **Learning:** `LocalEmbedder` correctly delayed the import of `sentence_transformers`, but its `.dim` property (accessed during `CSNPManager.__init__`) triggered the model load anyway to ascertain embedding dimensions. This caused `CSNPManager` instantiation to block for ~7 seconds, negating the benefit of the lazy import.
-**Action:** Added a `KNOWN_DIMS` dictionary to `LocalEmbedder` for common models (e.g., `all-MiniLM-L6-v2`: 384). If the model name is known, dimensions are resolved instantly without loading the heavy model, restoring the sub-millisecond startup time for the manager.
+**Action:** Added `KNOWN_DIMS` dictionary to `LocalEmbedder` for common models (e.g., `all-MiniLM-L6-v2`: 384). If the model name is known, dimensions are resolved instantly without loading the heavy model, restoring the sub-millisecond startup time for the manager.
 
 ## 2025-10-26 - Context Retrieval Caching
 **Learning:** `CSNPManager.retrieve_context` iterates through the text buffer, verifies integrity for each item (hashing), and joins strings on every call. In high-frequency polling scenarios (e.g., UI updates or multi-agent loops), this redundant processing wasted CPU cycles.
@@ -59,7 +59,7 @@
 **Action:** Moved `ThreadPoolExecutor` to `__init__` and added a `shutdown` method. This allows thread reuse.
 
 ## 2025-10-29 - Cross-Device State Loading
-**Learning:** `CSNPManager.load_state` blindly trusted the device of the saved tensors. If a state was saved on CPU but loaded on a machine with CUDA (where `embedder` is CUDA), the manager would degrade `memory_bank` to CPU to match the file, causing massive performance loss (implicit transfers) or crashes (if `identity_state` was on GPU).
+**Learning:** `CSNPManager.load_state` blindly trusted the device of the saved tensors. If a state was saved on CPU or loaded on a machine with CUDA (where `embedder` is CUDA), the manager would degrade `memory_bank` to CPU to match the file, causing massive performance loss (implicit transfers) or crashes (if `identity_state` was on GPU).
 **Action:** Modified `load_state` to strictly cast all loaded tensors to `self.device` (determined by the embedder), ensuring hardware acceleration is preserved regardless of the save file's origin.
 
 ## 2025-10-30 - Structure of Arrays for Merkle Leaves
@@ -69,3 +69,19 @@
 ## 2025-10-30 - Latency Masking in Agent Pipeline
 **Learning:** Parallelizing Image Generation with only Text Synthesis (the final step) leaves the Search and Code execution phases (which are synchronous) as unmasked latency blockers.
 **Action:** Moved the Image Generation submission to the very start of the `run` loop. This allows the high-latency Image task to run concurrently with Search, Code, AND Synthesis, effectively hiding its cost if the other tasks take longer than the image generation.
+
+## 2025-10-31 - Fast Path Context Verification
+**Learning:** `CSNPManager.retrieve_context` built a new list of valid texts every time, allocating O(N) memory. In 99% of cases, all memories are valid.
+**Action:** Implemented a "Fast Path" that checks hash validity first (iterating `hash_buffer`). If all valid, returns `"\n".join(text_buffer)` directly, avoiding the intermediate list allocation. Added safety check `len(text_buffer) == len(hash_buffer)` to prevent returning unverified tail elements.
+
+## 2025-10-31 - Reference-Only Integrity Layer
+**Learning:** `IntegrityChain._rebuild_tree` initialized the first layer with `self.ordered_hashes[:]`, creating an unnecessary O(N) copy.
+**Action:** Removed the slice copy. The loop rebinds the `layer` variable to a new list in each iteration, so the original `ordered_hashes` remains safe without copying. Also replaced the explicit `append` loop with a list comprehension for C-speed execution.
+
+## 2025-11-01 - Lazy Search Initialization
+**Learning:** `ToolArsenal` was initializing `DDGS` (DuckDuckGo Search) in its `__init__`, creating network sessions and overhead even if the user only performed local queries. This added unnecessary startup latency and resource usage.
+**Action:** Implemented lazy loading for `DDGS`. Removed the top-level import and eager instantiation. `DDGS` is now imported and initialized only within `web_search()` when actually needed, significantly reducing the initialization footprint of the `SovereignAgent`.
+
+## 2025-11-02 - Zero-Allocation Transport & Argmax Optimization
+**Learning:** `WassersteinMetric.compute_cost_matrix` allocated a new `[N, 1]` tensor for every compression step due to the `x_norm + y_norm` broadcast. Additionally, `_compress` computed the full Softmax distribution even for single-item eviction (`excess=1`), where finding the `argmin(mass)` is mathematically equivalent to finding `argmax(cost)`.
+**Action:** Implemented a pre-allocated `transport_buffer` in `CSNPManager` and updated `WassersteinMetric` to write costs directly into it using `torch.add(..., out=buffer)`. Replaced the Softmax/Sinkhorn calculation with `torch.argmax(cost)` for the steady-state eviction path. This eliminates all tensor allocations in the hot compression loop.

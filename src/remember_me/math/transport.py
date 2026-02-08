@@ -16,7 +16,7 @@ class WassersteinMetric:
         self.max_iter = max_iter
         self.tol = tol
 
-    def compute_cost_matrix(self, x: torch.Tensor, y: torch.Tensor, x_norm: torch.Tensor = None, y_norm: torch.Tensor = None) -> torch.Tensor:
+    def compute_cost_matrix(self, x: torch.Tensor, y: torch.Tensor, x_norm: torch.Tensor = None, y_norm: torch.Tensor = None, out: torch.Tensor = None) -> torch.Tensor:
         """
         Computes squared Euclidean distance cost matrix.
         C_ij = ||x_i - y_j||^2
@@ -31,8 +31,23 @@ class WassersteinMetric:
             y_norm = (y**2).sum(1).view(1, -1)
 
         # ||x - y||^2 = ||x||^2 + ||y||^2 - 2<x, y>
-        cost = x_norm + y_norm - 2.0 * torch.mm(x, y.t())
-        return torch.clamp(cost, min=0.0)
+        # ⚡ Bolt: Zero-Allocation Optimization
+
+        if out is not None:
+            # Use provided buffer for broadcast add
+            # cost = x_norm + y_norm (written to out)
+            torch.add(x_norm, y_norm, out=out)
+            cost = out
+        else:
+            # 1. Broadcast add allocates the 'cost' buffer [N, M]
+            cost = x_norm + y_norm
+
+        # 2. In-place addmm: cost = 1*cost - 2*(x @ y.t())
+        # Eliminates intermediate tensors for matrix multiplication and subtraction
+        cost.addmm_(x, y.t(), beta=1.0, alpha=-2.0)
+
+        # 3. In-place clamp
+        return cost.clamp_(min=0.0)
 
     def compute_transport_mass(self,
                              query_state: torch.Tensor,
@@ -66,8 +81,10 @@ class WassersteinMetric:
         if M == 1:
             # We want mass distribution over N memories.
             # C is [N, 1]. -C/epsilon -> scaled logits.
+            # ⚡ Bolt: In-place division to save allocation
+            C.div_(-self.epsilon)
             # Softmax over dim=0 ensures sum(mass_scores) = 1.0
-            return F.softmax(-C / self.epsilon, dim=0).flatten()
+            return F.softmax(C, dim=0).flatten()
 
         # Gibbs Kernel K = exp(-C / epsilon)
         K = torch.exp(-C / self.epsilon)

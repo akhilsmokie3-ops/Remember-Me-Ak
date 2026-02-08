@@ -32,11 +32,12 @@ class IntegrityChain:
         self.root: Optional[MerkleNode] = None
         self._is_dirty = False # ⚡ Bolt: Lazy rebuild flag
 
-    def _hash(self, data: str) -> str:
-        # ⚡ Bolt: Fallback for environments without xxhash
-        if HAS_XXHASH:
+    # ⚡ Bolt: Resolve hash function once at class definition time to avoid conditional overhead
+    if HAS_XXHASH:
+        def _hash(self, data: str) -> str:
             return xxhash.xxh64(data.encode('utf-8')).hexdigest()
-        else:
+    else:
+        def _hash(self, data: str) -> str:
             return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     def add_entry(self, data: str) -> str:
@@ -62,23 +63,17 @@ class IntegrityChain:
             return
 
         # ⚡ Bolt: Zero-Allocation Internal Nodes
-        # Use existing ordered_hashes list directly.
-        layer = self.ordered_hashes[:]
+        # Use existing ordered_hashes list directly (No initial copy needed).
+        layer = self.ordered_hashes
 
         while len(layer) > 1:
-            next_layer = []
-            count = len(layer)
-            for i in range(0, count, 2):
-                left = layer[i]
-                if i + 1 < count:
-                    right = layer[i+1]
-                    # Hash(Left + Right)
-                    combined = self._hash(left + right)
-                    next_layer.append(combined)
-                else:
-                    # Duplicate last node to balance tree
-                    combined = self._hash(left + left)
-                    next_layer.append(combined)
+            # ⚡ Bolt: List Comprehension for C-Speed Loop
+            n = len(layer)
+            next_layer = [
+                self._hash(layer[i] + layer[i+1]) if i + 1 < n
+                else self._hash(layer[i] + layer[i])
+                for i in range(0, n, 2)
+            ]
             layer = next_layer
 
         self.root = MerkleNode(layer[0])
@@ -102,3 +97,16 @@ class IntegrityChain:
         Verifies if a specific hash exists in the chain (O(1)).
         """
         return hash_val in self.leaf_hashes
+
+    def load_bulk(self, hashes: List[str], data: List[str]):
+        """
+        ⚡ Bolt: Fast loads the integrity chain from pre-computed hashes.
+        Bypasses O(N) hashing. Assumes inputs are from a trusted save file.
+        """
+        if len(hashes) != len(data):
+            raise ValueError("IntegrityChain load error: Hash/Data count mismatch.")
+
+        self.ordered_hashes.extend(hashes)
+        self.ordered_data.extend(data)
+        self.leaf_hashes.update(hashes)
+        self._is_dirty = True

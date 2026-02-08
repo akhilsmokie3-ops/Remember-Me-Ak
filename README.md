@@ -117,6 +117,14 @@ We built this for everyone. You do not need to be a Python wizard.
     Double-click **`start_sovereign.bat`**.
     * *Launches the backend engine.*
     * *Opens the "Cognitive Interface" in your browser.*
+
+### 🔧 Build from Source (Optional)
+*For Sovereign Engineers who do not trust pre-compiled binaries.*
+
+Remember-Me bundles a pre-compiled `llama-server.exe` for accessibility. To build your own:
+1.  Clone [llama.cpp](https://github.com/ggerganov/llama.cpp).
+2.  Build the `server` target (`make server` or `cmake --build . --target server`).
+3.  Replace `src/brain_engine/llama-server.exe` with your fresh binary.
  
 ---
  

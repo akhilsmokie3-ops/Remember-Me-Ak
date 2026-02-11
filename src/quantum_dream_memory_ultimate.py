@@ -153,6 +153,7 @@ class QDMAConfig:
     batch_size: int = 32
 
     status_port: int = 0
+    status_host: str = "127.0.0.1"
     enable_http: bool = False
     enable_prometheus: bool = False
 
@@ -202,6 +203,7 @@ class QDMAConfig:
         self.quarantine_retry_limit = int(os.environ.get("QDMA_QUARANTINE_RETRY", self.quarantine_retry_limit))
         self.max_workers = int(os.environ.get("QDMA_MAX_WORKERS", self.max_workers))
         self.status_port = int(os.environ.get("QDMA_STATUS_PORT", self.status_port))
+        self.status_host = os.environ.get("QDMA_STATUS_HOST", self.status_host)
         self.enable_http = os.environ.get("QDMA_ENABLE_HTTP", "0") == "1"
         self.enable_prometheus = HAS_PROMETHEUS and os.environ.get("QDMA_ENABLE_PROM", "0") == "1"
         self.faiss_batch = int(os.environ.get("QDMA_FAISS_BATCH", self.faiss_batch))
@@ -3199,8 +3201,8 @@ def main(argv=None):
         log("自动运行已禁用")
         if HAS_FASTAPI and cfg.enable_http:
             import uvicorn
-            log(f"启动HTTP服务器 on port {cfg.status_port or 8000}")
-            uvicorn.run(app, host="0.0.0.0", port=cfg.status_port or 8000)
+            log(f"启动HTTP服务器 on {cfg.status_host}:{cfg.status_port or 8000}")
+            uvicorn.run(app, host=cfg.status_host, port=cfg.status_port or 8000)
         return
 
     try:

@@ -1255,6 +1255,8 @@ class QuarantineRetrySystem:
         self.compressor = compressor
         self.registry = registry
         self.quarantine_path = os.path.join(cfg.data_dir, "quarantine.json")
+        self._cache = None
+        self._mtime = -1
 
     def retry_and_sublimate(self, top_k: int = 20, relax_steps: List[float] = None,
                            interp_steps: int = 5, perturb_sigma: float = 0.02) -> Dict[str, Any]:
@@ -1264,17 +1266,25 @@ class QuarantineRetrySystem:
             return {"tried": 0, "merged": 0}
 
         try:
-            with open(self.quarantine_path, "r", encoding="utf-8") as f:
-                quarantine = json.load(f)
+            mtime = os.path.getmtime(self.quarantine_path)
+            if self._cache is not None and mtime == self._mtime:
+                quarantine = self._cache
+            else:
+                with open(self.quarantine_path, "r", encoding="utf-8") as f:
+                    quarantine = json.load(f)
+                self._cache = quarantine
+                self._mtime = mtime
         except Exception:
             return {"tried": 0, "merged": 0}
 
-        q_sorted = sorted(quarantine, key=lambda x: -float(x.get("metric", 0)))[:top_k]
+        q_sorted = sorted(quarantine, key=lambda x: -float(x.get("metric", 0)))
+        q_top = q_sorted[:top_k]
+        q_rest = q_sorted[top_k:]
         tried = 0
         merged = 0
         new_quarantine = []
 
-        for item in q_sorted:
+        for item in q_top:
             tried += 1
             a_id = item.get("a")
             b_id = item.get("b")
@@ -1314,7 +1324,13 @@ class QuarantineRetrySystem:
                     item["exhausted"] = True
                     new_quarantine.append(item)
 
-        safe_write_json(self.quarantine_path, new_quarantine)
+        final_quarantine = new_quarantine + q_rest
+        safe_write_json(self.quarantine_path, final_quarantine)
+        self._cache = final_quarantine
+        try:
+            self._mtime = os.path.getmtime(self.quarantine_path)
+        except Exception:
+            self._mtime = -1
         return {"tried": tried, "merged": merged}
 
     def _attempt_merge(self, a: DreamEntity, b: DreamEntity,

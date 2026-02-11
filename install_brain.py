@@ -4,7 +4,7 @@ import sys
 import subprocess
 import time
 
-BRAIN_DIR = "brain_engine"
+BRAIN_DIR = os.path.abspath("brain_engine")
 MODEL_PATH = os.path.join(BRAIN_DIR, "model.gguf")
 # DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf (4.9 GB)
 # DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf (~5 GB)
@@ -55,15 +55,12 @@ def download_brain():
     if should_download:
         print(f"[*] Initializing Download Protocol: DeepSeek-R1-Distill-Llama-8B")
         print(f"[*] Source: {MODEL_URL}")
-        
-        # FIX: Ensure absolute path to avoid Windows confusion
-        abs_model_path = os.path.abspath(MODEL_PATH)
-        print(f"[*] Target Vector: {abs_model_path}")
+        print(f"[*] Target Vector: {MODEL_PATH}")
 
         # Nuke verify if exists to prevent lock issues
-        if os.path.exists(abs_model_path):
+        if os.path.exists(MODEL_PATH):
             try:
-                os.remove(abs_model_path)
+                os.remove(MODEL_PATH)
             except:
                 pass
 
@@ -79,7 +76,7 @@ def download_brain():
 
             block_size = 1024 * 1024 # 1 MB chunk size for faster disk IO
             
-            with open(abs_model_path, 'wb') as file, tqdm(
+            with open(MODEL_PATH, 'wb') as file, tqdm(
                 desc="Downloading Brain",
                 total=total_size,
                 unit='iB',

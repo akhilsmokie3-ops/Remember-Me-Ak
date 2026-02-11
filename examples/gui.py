@@ -25,7 +25,7 @@ class RememberMeApp(ctk.CTk):
         self.is_generating = False
 
         # --- Window Setup ---
-        self.title("Remember Me AI - Sovereign Cognitive Interface")
+        self.title("Remember Me AI - Sovereign Cognitive Interface v112.0")
         self.geometry("1100x700")
 
         # --- Grid Layout ---
@@ -53,12 +53,22 @@ class RememberMeApp(ctk.CTk):
         self.voice_switch = ctk.CTkSwitch(self.sidebar_frame, text="Voice Output", variable=self.voice_var)
         self.voice_switch.grid(row=3, column=0, padx=20, pady=10)
 
+        # Telemetry Visuals
+        self.telemetry_label = ctk.CTkLabel(self.sidebar_frame, text="Nervous System:", anchor="w")
+        self.telemetry_label.grid(row=4, column=0, padx=20, pady=(20, 0))
+
+        self.signal_label = ctk.CTkLabel(self.sidebar_frame, text="Signal: IDLE", text_color="gray")
+        self.signal_label.grid(row=5, column=0, padx=20, pady=5)
+
+        self.confidence_label = ctk.CTkLabel(self.sidebar_frame, text="Confidence: --%", text_color="gray")
+        self.confidence_label.grid(row=6, column=0, padx=20, pady=5)
+
         # Memory Status Visualizer
         self.status_label = ctk.CTkLabel(self.sidebar_frame, text="Memory Integrity: 100%", text_color="#00ff00")
-        self.status_label.grid(row=6, column=0, padx=20, pady=(20,0))
+        self.status_label.grid(row=7, column=0, padx=20, pady=(20,0))
 
         self.progress_bar = ctk.CTkProgressBar(self.sidebar_frame)
-        self.progress_bar.grid(row=7, column=0, padx=20, pady=10)
+        self.progress_bar.grid(row=8, column=0, padx=20, pady=10)
         self.progress_bar.set(0) # Usage
 
         # Persistence Buttons
@@ -159,14 +169,22 @@ class RememberMeApp(ctk.CTk):
             # Use the Agent to run the loop
             result = self.agent.run(user_input, context)
 
-            # Display Tool Outputs
-            for output in result["tool_outputs"]:
-                self.print_system(output.strip())
-
-            # Display Final Response
-            self.print_ai(result["response"])
+            telemetry = result.get("telemetry", {})
             response_text = result["response"]
 
+            # Update Visuals
+            self.after(0, self._update_telemetry, telemetry)
+
+            if telemetry.get("veto", False):
+                 self.print_system("VETO: Request Rejected.")
+                 self.print_ai(response_text)
+            else:
+                # Display Tool Outputs
+                for output in result["tool_outputs"]:
+                    self.print_system(output.strip())
+
+                # Display Final Response
+                self.print_ai(response_text)
         else:
             time.sleep(0.5)
             response_text = "[MOCK AI]: Please load a model to chat."
@@ -177,9 +195,22 @@ class RememberMeApp(ctk.CTk):
             self.tools.speak(response_text)
 
         # 4. Update Memory
-        self.memory.update_state(user_input, response_text)
-        self._update_status()
+        if not telemetry.get("veto", False):
+            self.memory.update_state(user_input, response_text)
+
+        self.after(0, self._update_status)
         self.is_generating = False
+
+    def _update_telemetry(self, telemetry):
+        if "signal" in telemetry:
+             sig = telemetry["signal"]
+             self.signal_label.configure(text=f"Signal: {sig['mode']}", text_color="#00ffff")
+
+        if "audit" in telemetry:
+             aud = telemetry["audit"]
+             conf = aud["confidence"] * 100
+             color = "#00ff00" if conf > 70 else ("#ffff00" if conf > 40 else "#ff0000")
+             self.confidence_label.configure(text=f"Confidence: {conf:.0f}%", text_color=color)
 
     def _update_status(self):
         # Update progress bar based on memory usage

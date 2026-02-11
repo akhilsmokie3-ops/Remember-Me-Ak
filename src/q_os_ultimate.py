@@ -215,7 +215,7 @@ class Q_OS_Trinity:
                             if content not in seen_content and content != text:
                                 memories.append(content)
                                 seen_content.add(content)
-                        except Exception:
+                        except UnicodeDecodeError:
                             pass
                             
             return memories

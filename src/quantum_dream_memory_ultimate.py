@@ -153,6 +153,7 @@ class QDMAConfig:
     batch_size: int = 32
 
     status_port: int = 0
+    status_host: str = "127.0.0.1"
     enable_http: bool = False
     enable_prometheus: bool = False
 
@@ -202,6 +203,7 @@ class QDMAConfig:
         self.quarantine_retry_limit = int(os.environ.get("QDMA_QUARANTINE_RETRY", self.quarantine_retry_limit))
         self.max_workers = int(os.environ.get("QDMA_MAX_WORKERS", self.max_workers))
         self.status_port = int(os.environ.get("QDMA_STATUS_PORT", self.status_port))
+        self.status_host = os.environ.get("QDMA_STATUS_HOST", self.status_host)
         self.enable_http = os.environ.get("QDMA_ENABLE_HTTP", "0") == "1"
         self.enable_prometheus = HAS_PROMETHEUS and os.environ.get("QDMA_ENABLE_PROM", "0") == "1"
         self.faiss_batch = int(os.environ.get("QDMA_FAISS_BATCH", self.faiss_batch))
@@ -1255,6 +1257,8 @@ class QuarantineRetrySystem:
         self.compressor = compressor
         self.registry = registry
         self.quarantine_path = os.path.join(cfg.data_dir, "quarantine.json")
+        self._cache = None
+        self._mtime = -1
 
     def retry_and_sublimate(self, top_k: int = 20, relax_steps: List[float] = None,
                            interp_steps: int = 5, perturb_sigma: float = 0.02) -> Dict[str, Any]:
@@ -1264,17 +1268,25 @@ class QuarantineRetrySystem:
             return {"tried": 0, "merged": 0}
 
         try:
-            with open(self.quarantine_path, "r", encoding="utf-8") as f:
-                quarantine = json.load(f)
+            mtime = os.path.getmtime(self.quarantine_path)
+            if self._cache is not None and mtime == self._mtime:
+                quarantine = self._cache
+            else:
+                with open(self.quarantine_path, "r", encoding="utf-8") as f:
+                    quarantine = json.load(f)
+                self._cache = quarantine
+                self._mtime = mtime
         except Exception:
             return {"tried": 0, "merged": 0}
 
-        q_sorted = sorted(quarantine, key=lambda x: -float(x.get("metric", 0)))[:top_k]
+        q_sorted = sorted(quarantine, key=lambda x: -float(x.get("metric", 0)))
+        q_top = q_sorted[:top_k]
+        q_rest = q_sorted[top_k:]
         tried = 0
         merged = 0
         new_quarantine = []
 
-        for item in q_sorted:
+        for item in q_top:
             tried += 1
             a_id = item.get("a")
             b_id = item.get("b")
@@ -1314,7 +1326,13 @@ class QuarantineRetrySystem:
                     item["exhausted"] = True
                     new_quarantine.append(item)
 
-        safe_write_json(self.quarantine_path, new_quarantine)
+        final_quarantine = new_quarantine + q_rest
+        safe_write_json(self.quarantine_path, final_quarantine)
+        self._cache = final_quarantine
+        try:
+            self._mtime = os.path.getmtime(self.quarantine_path)
+        except Exception:
+            self._mtime = -1
         return {"tried": tried, "merged": merged}
 
     def _attempt_merge(self, a: DreamEntity, b: DreamEntity,
@@ -3199,8 +3217,8 @@ def main(argv=None):
         log("自动运行已禁用")
         if HAS_FASTAPI and cfg.enable_http:
             import uvicorn
-            log(f"启动HTTP服务器 on port {cfg.status_port or 8000}")
-            uvicorn.run(app, host="0.0.0.0", port=cfg.status_port or 8000)
+            log(f"启动HTTP服务器 on {cfg.status_host}:{cfg.status_port or 8000}")
+            uvicorn.run(app, host=cfg.status_host, port=cfg.status_port or 8000)
         return
 
     try:

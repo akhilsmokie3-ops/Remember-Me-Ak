@@ -4,7 +4,7 @@ import sys
 import subprocess
 import time
 
-BRAIN_DIR = os.path.abspath("brain_engine")
+BRAIN_DIR = os.path.abspath("src/remember_me/brain_engine")
 MODEL_PATH = os.path.join(BRAIN_DIR, "model.gguf")
 # DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf (4.9 GB)
 # DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf (~5 GB)

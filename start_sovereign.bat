@@ -10,12 +10,12 @@ if %errorlevel% neq 0 (
 )
 
 echo [1/3] Ignition: Starting Local Inference Engine...
-start /min "Sovereign Engine" "brain_engine\llama-server.exe" -m "brain_engine\model.gguf" -c 8192 --port 8081 --n-gpu-layers 35
+start /min "Sovereign Engine" "src\remember_me\brain_engine\llama-server.exe" -m "src\remember_me\brain_engine\model.gguf" -c 8192 --port 8081 --n-gpu-layers 35
 
 echo [2/3] Waiting for Engine warmup...
 timeout /t 5 /nobreak >nul
 
 echo [3/3] Launching Cognitive Interface...
-python -m streamlit run src/interface.py --server.port 8503 --server.headless true
+python -m streamlit run src/remember_me/ui/streamlit_app.py --server.port 8503 --server.headless true
 
 pause

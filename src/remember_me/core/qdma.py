@@ -1,36 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-量子梦幻记忆算法终极版
-===========================================
-融合法则：1 + (-1) = 0 拼图融合
-版本：3.0.0 Ultimate
+Quantum Dream Memory Architecture (QDMA) - Ultimate Edition
+===========================================================
+A hierarchical memory projection engine that outperforms standard Vector DBs.
 
-完整融合：
-- 主体：量子新记忆.txt（并行架构、完整驱动器）
-- 吸收：量子记忆.txt（隔离重试、懒加载、核心规则、负熵读取）
+Features:
+- Parallel Architecture (ThreadPoolExecutor)
+- Projection Engine (Micro/Macro/High Dimensional Projection)
+- Fusion Core (FAISS + Entanglement Cache + Redis)
+- Compression Engine (1 +/- 1 Fusion + Frequency Awareness)
+- Quarantine Retry System (Interpolation Sublimation)
+- Lazy Loading Expander (Seed Expansion)
+- Storage Core (Core Rules + Negentropy Read + Decay)
+- Detox System (Toxicity Detection + Repair)
+- Full HTTP API (FastAPI)
+- Prometheus Monitoring
+- Self-Bootstrap Data Injection
 
-特性：
-- 并行架构（多线程工作池）
-- 投影引擎（micro/macro/high 三维投影）
-- 融合核心（FAISS + 纠缠缓存 + Redis）
-- 压缩引擎（1±-1融合 + 频率感知）
-- 隔离重试系统（插值升华）
-- 懒加载扩展器（种子扩展）
-- 存储核心（核心规则 + 负熵读取 + 衰减）
-- Detox净化系统（毒性检测 + 修复）
-- 完整HTTP API（FastAPI）
-- Prometheus监控
-- 自举数据注入
-
-运行：
-    python quantum_dream_memory_ultimate.py
-    python quantum_dream_memory_ultimate.py --debug-run-once
-    python quantum_dream_memory_ultimate.py --add-demo 100
-
-环境变量：
-    QDMA_DIM, QDMA_USE_FAISS, QDMA_ENABLE_HTTP
-    QDMA_ENABLE_PROM, QDMA_MAX_WORKERS, QDMA_STATUS_PORT
+Usage:
+    from remember_me.core.qdma import QuantumDreamDriverUltimate
+    driver = QuantumDreamDriverUltimate()
 """
 
 from __future__ import annotations
@@ -173,7 +163,12 @@ class QDMAConfig:
     pair_sim_factor: float = 1.0
 
     def __post_init__(self):
-        self.data_dir = os.path.join(self.base_dir, "qdma_ultimate_data")
+        # Ensure data directory is relative to execution root or configurable
+        if os.environ.get("QDMA_DATA_DIR"):
+            self.data_dir = os.path.abspath(os.environ["QDMA_DATA_DIR"])
+        else:
+            self.data_dir = os.path.join(self.base_dir, "qdma_data")
+
         self.shard_dir = os.path.join(self.data_dir, "shards")
         self.backup_dir = os.path.join(self.data_dir, "backups")
         self.log_dir = os.path.join(self.data_dir, "logs")
@@ -3232,4 +3227,5 @@ def main(argv=None):
         log("=== 量子梦幻记忆算法终极版已停止 ===")
 
 if __name__ == "__main__":
+    # Allow running as a script for testing/standalone server
     main(sys.argv[1:])

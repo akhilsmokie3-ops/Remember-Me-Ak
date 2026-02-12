@@ -1,7 +1,11 @@
 import streamlit as st
 import time
 import os
-import torch
+import sys
+
+# Add src to path for absolute imports (remember_me package resolution)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+
 from remember_me.core.csnp import CSNPManager
 from remember_me.integrations.engine import ModelRegistry
 from remember_me.integrations.tools import ToolArsenal
@@ -43,6 +47,7 @@ st.markdown("""
 def get_kernel():
     """Initializes the Sovereign Stack once."""
     print("⚡ KERNEL: Booting...")
+    # Initialize Engine (Auto-detects llama-server or falls back to transformers)
     engine = ModelRegistry()
     memory = CSNPManager(context_limit=15)
     tools = ToolArsenal()

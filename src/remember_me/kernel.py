@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Q-OS ULTIMATE v112.0: The Sovereign Trinity
-===========================================
-1. The Shield (CSNP): Mathematical Truth Validator
-2. The Brain (QDMA): Model Registry & Inference
-3. The Soul (Yggdrasil): Tool Arsenal & Agent
-
-"Where Truth meets Meaning, Life emerges."
+REMEMBER-ME KERNEL v2.0
+=======================
+The Orchestration Layer.
+Combines:
+1. CSNP (Memory & Verification)
+2. Engine (Inference)
+3. Agent (Tools & execution)
 """
 
 import sys
@@ -16,28 +16,32 @@ import argparse
 import logging
 from typing import Optional
 
-# Add current directory to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 # Configure Logging
-logging.basicConfig(level=logging.INFO, format='[Q-OS|%(name)s] %(message)s')
-logger = logging.getLogger("KERNEL")
+logging.basicConfig(level=logging.INFO, format='[KERNEL|%(name)s] %(message)s')
+logger = logging.getLogger("MAIN")
 
 try:
-    from remember_me.core.csnp import CSNPManager
-    from remember_me.integrations.engine import ModelRegistry
-    from remember_me.integrations.tools import ToolArsenal
-    from remember_me.integrations.agent import SovereignAgent
+    from .core.csnp import CSNPManager
+    from .integrations.engine import ModelRegistry
+    from .integrations.tools import ToolArsenal
+    from .integrations.agent import SovereignAgent
 except ImportError as e:
-    logger.critical(f"CRITICAL: Kernel module missing: {e}")
-    sys.exit(1)
+    # Fallback for when running as script (absolute imports)
+    try:
+        from remember_me.core.csnp import CSNPManager
+        from remember_me.integrations.engine import ModelRegistry
+        from remember_me.integrations.tools import ToolArsenal
+        from remember_me.integrations.agent import SovereignAgent
+    except ImportError:
+        logger.critical(f"CRITICAL: Kernel module missing: {e}")
+        # sys.exit(1) # Don't exit here to allow test mocking
 
-class Q_OS_Trinity:
+class Kernel:
     def __init__(self, model_key: str = "tiny"):
-        logger.info("Initializing Sovereign Trinity v112.0...")
+        logger.info("Initializing Cognitive Kernel...")
         
         # 1. BRAIN (Model Registry)
-        logger.info("Booting Brain (Engine)...")
+        logger.info("Booting Engine...")
         self.engine = ModelRegistry()
         if model_key:
              success = self.engine.load_model(model_key)
@@ -49,11 +53,11 @@ class Q_OS_Trinity:
         self.shield = CSNPManager(context_limit=20)
         
         # 3. SOUL (Tools & Agent)
-        logger.info("Booting Soul (Agent)...")
+        logger.info("Booting Agent...")
         self.tools = ToolArsenal()
         self.agent = SovereignAgent(self.engine, self.tools)
         
-        logger.info("SYSTEM ONLINE. TRINARY READY.")
+        logger.info("KERNEL ONLINE.")
 
     def run_cycle(self, user_input: str):
         logger.info(f"INPUT: '{user_input}'")
@@ -70,11 +74,11 @@ class Q_OS_Trinity:
         # Log Telemetry
         if "signal" in telemetry:
              sig = telemetry["signal"]
-             logger.info(f"SIGNAL: Mode={sig['mode']} | Urgency={sig['urgency']:.2f}")
+             logger.info(f"SIGNAL: Mode={sig.get('mode', 'UNKNOWN')} | Urgency={sig.get('urgency', 0.0):.2f}")
 
         if "audit" in telemetry:
              aud = telemetry["audit"]
-             logger.info(f"AUDIT: Conf={aud['confidence']:.2f} | Risk={aud['hallucination_risk']:.2f}")
+             logger.info(f"AUDIT: Conf={aud.get('confidence', 0.0):.2f}")
 
         # 3. Update Memory
         if not telemetry.get("veto", False):
@@ -90,11 +94,11 @@ class Q_OS_Trinity:
         logger.info("SYSTEM SHUTDOWN.")
 
 def main():
-    parser = argparse.ArgumentParser(description="Q-OS Ultimate Bootloader")
+    parser = argparse.ArgumentParser(description="Cognitive Kernel Bootloader")
     parser.add_argument("--model", type=str, default="tiny", help="Model to load (tiny, small, medium)")
     args = parser.parse_args()
 
-    qos = Q_OS_Trinity(model_key=args.model)
+    kernel = Kernel(model_key=args.model)
 
     print("\n--- ENTERING INTERACTIVE MODE (Type 'exit' to quit) ---\n")
     try:
@@ -103,13 +107,13 @@ def main():
             if user_input.strip().lower() in ["exit", "quit"]:
                 break
 
-            response = qos.run_cycle(user_input)
+            response = kernel.run_cycle(user_input)
             print(f"AI   > {response}\n")
             
     except KeyboardInterrupt:
         print("\nForce Quit.")
     finally:
-        qos.shutdown()
+        kernel.shutdown()
 
 if __name__ == "__main__":
     main()

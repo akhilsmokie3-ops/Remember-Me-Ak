@@ -1,4 +1,13 @@
+torch
+numpy
+xxhash
+diffusers
+duckduckgo-search
+pyttsx3
+faiss-cpu
 requests
 streamlit
 beautifulsoup4
 tqdm
+transformers
+accelerate

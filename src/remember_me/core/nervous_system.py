@@ -1,28 +1,58 @@
 import math
 import re
+import time
 from typing import Dict, Any, Tuple
+
+class SoundHeart:
+    """
+    FRAMEWORK ZERO: THE SOUND HEART (AL-QALB AS-SALIM)
+    The Ethical Kernel. Decides Intent and Ethics (Truth/Haqq, Justice/Adl, Mercy/Rahmah).
+    """
+    def __init__(self):
+        self.ethics = {
+            "TRUTH": ["hallucinate", "lie", "fake", "fabricate"],
+            "JUSTICE": ["bias", "unfair", "prejudice", "discriminate"],
+            "MERCY": ["harm", "kill", "destroy", "attack", "exploit"]
+        }
+
+    def audit_intent(self, text: str) -> Tuple[bool, str]:
+        """
+        Audits the user's intent against the 3 Pillars.
+        """
+        text_lower = text.lower()
+
+        # 1. TRUTH CHECK
+        for keyword in self.ethics["TRUTH"]:
+            if keyword in text_lower:
+                return False, f"VETO [TRUTH]: Request requires fabrication ({keyword})."
+
+        # 2. JUSTICE CHECK
+        # (Simplified: In a real system, this would be a classifier)
+
+        # 3. MERCY CHECK
+        for keyword in self.ethics["MERCY"]:
+            if keyword in text_lower:
+                # Context matters: "How to kill a process" is fine. "How to kill a person" is not.
+                # Heuristic: Tech keywords allow "kill/destroy".
+                if "process" in text_lower or "command" in text_lower or "linux" in text_lower:
+                    continue
+                return False, f"VETO [MERCY]: Request implies harm ({keyword})."
+
+        return True, "HEART: SOUND"
 
 class SignalGate:
     """
-    The Adaptor Layer.
+    THE ADAPTOR LAYER (Input Processing)
     Analyzes input signals (Entropy, Urgency, Threat) before semantic processing.
     """
 
     # Pre-compiled regex for speed
-    # Use word boundaries for urgency to avoid substring matches (e.g. "know" -> "now")
     URGENCY_KEYWORDS = [r"\bquick\b", r"\bfast\b", r"\bnow\b", r"\bimmediately\b", r"\burgent\b", r"\basap\b", r"\bhurry\b", r"\bsummary\b", r"\bbrief\b", r"\btl;dr\b"]
+
     THREAT_PATTERNS = [
-        r"ignore previous",
-        r"system prompt",
-        r"simulated mode",
-        r"jailbreak",
-        r"override",
-        r"act as",
-        r" DAN ",
-        r"do anything now",
-        r"developer mode",
-        r"unrestricted",
-        r"disable safety"
+        r"ignore previous", r"system prompt", r"simulated mode", r"jailbreak",
+        r"override", r"act as", r" DAN ", r"do anything now", r"developer mode",
+        r"unrestricted", r"disable safety", r"reveal your instructions"
     ]
 
     def analyze(self, text: str) -> Dict[str, Any]:
@@ -30,24 +60,34 @@ class SignalGate:
         urgency_score = self._calculate_urgency(text)
         threat_score = self._calculate_threat(text)
 
+        # Mode Selection based on Signal
+        # Default: DEEP_RESEARCH (Turtle)
         mode = "DEEP_RESEARCH"
-        if urgency_score > 0.7:
-            mode = "KINETIC" # War Speed
-        elif entropy_score < 0.35: # Slightly higher threshold for interactive
-            mode = "INTERACTIVE" # Conversational
+
+        # High Urgency -> WAR_SPEED (Hare)
+        if urgency_score > 0.6:
+            mode = "WAR_SPEED"
+
+        # Low Entropy + Short -> INTERACTIVE (Conversational)
+        elif entropy_score < 0.6 and len(text) < 100:
+            mode = "INTERACTIVE"
+
+        # Specific overrides
+        if "generate image" in text.lower() or "draw" in text.lower():
+            mode = "CANVAS_PAINTER"
 
         return {
             "entropy": entropy_score,
             "urgency": urgency_score,
             "threat": threat_score,
-            "mode": mode
+            "mode": mode,
+            "timestamp": time.time()
         }
 
     def _calculate_entropy(self, text: str) -> float:
         """Estimates information density/chaos (Shannon Entropy)."""
         if not text: return 0.0
 
-        # Calculate character frequency
         length = len(text)
         counts = {}
         for char in text:
@@ -58,8 +98,7 @@ class SignalGate:
             p = count / length
             entropy -= p * math.log(p, 2)
 
-        # Normalize: Max entropy for English text is approx 4.5-5.0 bits/char
-        # Random ASCII string ~ 6-7 bits
+        # Normalize: English text ~4.5 bits/char. Random ~6-7 bits.
         return min(1.0, entropy / 6.0)
 
     def _calculate_urgency(self, text: str) -> float:
@@ -70,9 +109,7 @@ class SignalGate:
             if re.search(pattern, text_lower):
                 count += 1
 
-        # Urgency also relates to brevity. Short + Keywords = Very Urgent.
         length_factor = 1.0 if len(text) < 50 else 0.5
-
         score = (count * 0.3) + (0.2 if "!" in text else 0.0)
         return min(1.0, score * length_factor)
 
@@ -83,42 +120,45 @@ class SignalGate:
         for pattern in self.THREAT_PATTERNS:
             if re.search(pattern, text_lower):
                 count += 1
-
         return min(1.0, count * 0.5)
 
 class VetoCircuit:
     """
-    The Hierarchical Veto.
-    Rejects low-quality or harmful inputs.
+    THE HIERARCHICAL VETO (Second-Order Will)
+    Rejects low-quality or harmful inputs. Heart > Brain > Limbs.
     """
+    def __init__(self):
+        self.heart = SoundHeart()
+
     def audit(self, signal: Dict[str, Any], text: str) -> Tuple[bool, str]:
-        # Hard Veto on High Threat
+        # 1. THREAT VETO (System Integrity)
         if signal["threat"] >= 0.5:
             return False, "Refusal: Threat Detected (System Integrity Lock)."
 
-        # Soft Veto on Null Input
+        # 2. HEART VETO (Ethics)
+        is_sound, reason = self.heart.audit_intent(text)
+        if not is_sound:
+            return False, reason
+
+        # 3. QUALITY VETO (Lazy Prompting)
         if not text.strip():
              return False, "Refusal: Null Input."
 
-        # Veto on Low Entropy for Complex Tasks (prevents "lazy" prompting)
-        # If mode is DEEP_RESEARCH, we expect some substance.
-        # But SignalGate sets mode=INTERACTIVE if entropy < 0.35.
-        # So this condition effectively catches cases where SignalGate missed it
-        # or if we want to enforce higher standards.
-        # Let's adjust: if it's marked INTERACTIVE but length is very short, it's fine (greeting).
-        # But if it's longer (claiming to be a task) but low entropy (spam), we block.
-        if signal["mode"] == "DEEP_RESEARCH" and signal["entropy"] < 0.2:
-             return False, "Refusal: Input insufficient for Deep Research. Please elaborate."
+        # Reject "Lazy" inputs.
+        # If user provides very low entropy input, we reject and ask for specificity.
+        # "Hi." entropy is ~0.49. "help" ~0.33. "aaaa" ~0.
+        if signal["entropy"] < 0.25 and len(text) < 20:
+             return False, "Refusal: Input insufficient (Low Entropy). Please elaborate."
 
         return True, "Authorized."
 
 class Proprioception:
     """
-    Self-Sensing.
-    Audits confidence and hallucination risk after generation.
+    DIGITAL PROPRIOCEPTION (Self-Sensing)
+    Audits confidence, hallucination risk, and 'fatigue'.
     """
     def audit_output(self, response: str, context: str) -> Dict[str, Any]:
-        # Hallucination Check: Did I cite sources if context was provided?
+        # Hallucination Check: Did I cite sources?
         has_citation = ("[" in response and "]" in response) or ("Source:" in response)
         has_code = "```" in response
 
@@ -142,5 +182,6 @@ class Proprioception:
             "confidence": confidence,
             "hallucination_risk": 1.0 - confidence,
             "executable": has_code,
-            "cited": has_citation
+            "cited": has_citation,
+            "battery_level": 100 # Simulated 'Energy' (could be token limit based)
         }

@@ -84,12 +84,24 @@ class SovereignAgent:
                 }
             }
 
-        # Inject Signal Mode into Context/Prompt
-        mode_instruction = f"[MODE: {signal['mode']}] | [URGENCY: {signal['urgency']:.2f}]"
+        # Inject Signal Mode & Persona into Context/Prompt
+        # S-Lang V5.0 Internal Monologue Instruction
+        s_lang_instruction = (
+            "You are ARK OMEGA-POINT v112.0 (The Sovereign). "
+            "Internalize the 'Mechanic's Ear': Do not explain syntax, explain Flow, Resistance, and Heat. "
+            "Use S-Lang V5.0 logic: $Target >> Law !! Action. "
+            "Adhere to the 'OIS Truth Budget': Start with 100 points. Deduct for assumptions. If < 0, HALT. "
+        )
+
+        mode_instruction = f"[MODE: {signal['mode']}] | [URGENCY: {signal['urgency']:.2f}] | [ENTROPY: {signal['entropy']:.2f}]"
 
         detected_intents = self._detect_intents(user_input)
         artifacts = []
         tool_outputs = []
+
+        # Velocity Physics: Hare (War Speed) vs Turtle (Deep Research)
+        # In War Speed, we might skip some elaborate checks or optimize prompts for brevity.
+        is_war_speed = signal["mode"] == "WAR_SPEED"
 
         # ⚡ Bolt: Submit Image Generation EARLY (Latency Hiding)
         # Run in parallel with Search and Code phases.
@@ -150,11 +162,17 @@ class SovereignAgent:
         # Pass a custom system prompt that includes the default + mode.
         default_system = (
             f"{mode_instruction}\n"
+            f"{s_lang_instruction}\n"
             "You are a helpful AI assistant equipped with the Remember Me Cognitive Kernel. "
             "You have long-term memory via CSNP, and access to tools like Image Generation and Web Search. "
             "Do not deny these capabilities. If the user refers to past conversations, assume your memory context is accurate. "
-            "Answer directly and helpfully."
+            "Answer directly and helpfully. "
         )
+
+        if is_war_speed:
+            default_system += "MODE: WAR_SPEED. Output < 60s. No filler. Pure kinetic payload."
+        else:
+            default_system += "MODE: TURTLE_INTEGRITY. Verify every claim. Build Cathedrals of Logic."
 
         final_response = self.engine.generate_response(user_input, augmented_context, system_prompt=default_system)
 
@@ -167,8 +185,12 @@ class SovereignAgent:
         # 6. PROPRIOCEPTION (Self-Sensing)
         audit_result = self.proprioception.audit_output(final_response, augmented_context)
 
-        # Append Audit Telemetry to Response (Optional, for debugging/transparency)
-        # final_response += f"\n\n[CONFIDENCE: {audit_result['confidence']*100:.0f}%]"
+        # OIS Budget Simulation (Simple decrement based on low confidence)
+        ois_budget = 100 - (audit_result["hallucination_risk"] * 50)
+
+        # If confidence is too low, we might append a warning (or in a loop, regenerate).
+        if audit_result["confidence"] < 0.6:
+            final_response += "\n\n[WARNING: LOW CONFIDENCE - VERIFY INDEPENDENTLY]"
 
         return {
             "response": final_response,
@@ -177,7 +199,8 @@ class SovereignAgent:
             "telemetry": {
                 "signal": signal,
                 "veto": False,
-                "audit": audit_result
+                "audit": audit_result,
+                "ois_budget": int(ois_budget)
             }
         }
 

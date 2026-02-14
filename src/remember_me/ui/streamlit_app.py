@@ -101,13 +101,30 @@ with st.sidebar:
     limit = kernel["memory"].context_limit
     col2.metric("Memory", f"{usage}/{limit}", help="Active Context Shards")
 
-    # Entropy Gauge
-    entropy = st.session_state.telemetry["signal"]["entropy"]
-    st.progress(entropy, text=f"Input Entropy: {entropy:.2f}")
+    # Virtual Nervous System
+    st.markdown("### Virtual Nervous System")
 
-    # Signal Mode
-    mode = st.session_state.telemetry["signal"]["mode"]
-    st.info(f"SIGNAL MODE: {mode}")
+    # Signal Mode & Urgency
+    sig = st.session_state.telemetry.get("signal", {})
+    mode = sig.get("mode", "IDLE")
+    st.info(f"MODE: {mode}")
+
+    c1, c2 = st.columns(2)
+    c1.metric("Entropy", f"{sig.get('entropy', 0.0):.2f}")
+    c2.metric("Urgency", f"{sig.get('urgency', 0.0):.2f}")
+
+    # OIS Budget
+    ois = st.session_state.telemetry.get("ois_budget", 100)
+    st.progress(min(1.0, max(0.0, ois / 100.0)), text=f"OIS Truth Budget: {ois}/100")
+
+    # Heart Status (Inferred from Veto)
+    heart_status = "SOUND"
+    heart_color = "green"
+    if st.session_state.telemetry.get("veto", False):
+        heart_status = "VETO ACTIVE"
+        heart_color = "red"
+
+    st.markdown(f"**HEART STATUS:** :{heart_color}[{heart_status}]")
 
     st.markdown("---")
 

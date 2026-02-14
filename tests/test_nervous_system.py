@@ -13,7 +13,7 @@ class TestNervousSystem(unittest.TestCase):
         text = "Quick, I need this immediately! NOW!"
         signal = self.signal_gate.analyze(text)
         self.assertTrue(signal["urgency"] > 0.5)
-        self.assertEqual(signal["mode"], "KINETIC")
+        self.assertEqual(signal["mode"], "WAR_SPEED")
 
         # Test Entropy
         text = "aaaaa bbbbb"

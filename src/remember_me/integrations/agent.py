@@ -8,6 +8,7 @@ from typing import List, Dict, Any
 from remember_me.integrations.tools import ToolArsenal
 from remember_me.integrations.engine import ModelRegistry
 from remember_me.core.nervous_system import SignalGate, VetoCircuit, Proprioception
+from remember_me.core.sandbox import SecurePythonSandbox
 
 class SovereignAgent:
     """
@@ -15,26 +16,6 @@ class SovereignAgent:
     Analyzes user intent and executes a multi-step tool chain (Search -> Code -> Image)
     before synthesizing the final response.
     """
-
-    # ⚡ Bolt: Pre-allocate globals to avoid reconstruction overhead (Optimization)
-    _BASE_GLOBALS = {
-        "math": __import__("math"),
-        "random": __import__("random"),
-        "datetime": __import__("datetime"),
-        "print": print,
-        "range": range,
-        "len": len,
-        "int": int,
-        "float": float,
-        "str": str,
-        "list": list,
-        "dict": dict,
-        "set": set,
-        "sum": sum,
-        "min": min,
-        "max": max,
-        "sorted": sorted,
-    }
 
     def __init__(self, engine: ModelRegistry, tools: ToolArsenal):
         self.engine = engine
@@ -44,9 +25,11 @@ class SovereignAgent:
         self.signal_gate = SignalGate()
         self.veto_circuit = VetoCircuit()
         self.proprioception = Proprioception()
+        self.sandbox = SecurePythonSandbox()
 
         # ⚡ Bolt: Persistent ThreadPool to reuse threads across requests
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        # Increased workers to allow parallel Search + Image generation
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
         # Intent Patterns (Heuristic/Regex for speed & reliability on small models)
         # ⚡ Bolt: Combined regex for single-pass O(N) detection
@@ -115,12 +98,20 @@ class SovereignAgent:
             img_future = self._executor.submit(self.tools.generate_image, img_prompt, img_path)
 
         # 3. SEARCH PHASE (Information Gathering)
+        # ⚡ Bolt: Velocity Physics - Run Search in Parallel with Image
+        search_future = None
         if "SEARCH" in detected_intents:
-            query = user_input # In a complex agent, we'd extract the query. For now, full prompt is decent.
-            # Strip "search for" etc if possible, but DDG handles natural language well.
-            print(f"🕵️ Orchestrator: Triggering Search for '{query[:20]}...'")
-            search_res = self.tools.web_search(query)
-            tool_outputs.append(f"[SEARCH RESULTS]:\n{search_res}\n")
+            query = user_input
+            print(f"🕵️ Orchestrator: Triggering Search for '{query[:20]}...' (Parallel)")
+            search_future = self._executor.submit(self.tools.web_search, query)
+
+        # Resolve Search if needed for Code or Synthesis
+        if search_future:
+            try:
+                search_res = search_future.result(timeout=10)
+                tool_outputs.append(f"[SEARCH RESULTS]:\n{search_res}\n")
+            except concurrent.futures.TimeoutError:
+                tool_outputs.append("[SEARCH ERROR]: Timeout.")
 
         # 4. CODE PHASE (Symbolic Reasoning)
         if "CODE" in detected_intents:
@@ -147,8 +138,8 @@ class SovereignAgent:
             code_match = re.search(r"```python(.*?)```", code_response, re.DOTALL)
             if code_match:
                 code = code_match.group(1).strip()
-                print(f"⚙️ Executing Code...")
-                exec_result = self._execute_python(code)
+                print(f"⚙️ Executing Code (Sandboxed)...")
+                exec_result = self.sandbox.execute(code)
                 tool_outputs.append(f"[PYTHON EXECUTION RESULT]:\n{exec_result}\n")
                 artifacts.append({"type": "code", "content": code, "result": exec_result})
             else:
@@ -212,23 +203,3 @@ class SovereignAgent:
             found.add(match.lastgroup)
         return list(found)
 
-    def _execute_python(self, code: str) -> str:
-        """
-        Executes Python code in a restricted namespace and captures stdout.
-        """
-        # Buffer for stdout
-        old_stdout = sys.stdout
-        redirected_output = sys.stdout = io.StringIO()
-
-        # Restricted globals
-        # ⚡ Bolt: Copy pre-allocated globals instead of rebuilding (1.3x faster than dict())
-        allowed_globals = self._BASE_GLOBALS.copy()
-
-        try:
-            # We wrap in a try-except block inside the exec
-            exec(code, allowed_globals)
-            sys.stdout = old_stdout
-            return redirected_output.getvalue()
-        except Exception:
-            sys.stdout = old_stdout
-            return traceback.format_exc()

@@ -35,13 +35,13 @@ def test_execute_python_performance():
     code = "a = 1 + 1"
 
     # Warmup
-    for _ in range(100):
-        agent._execute_python(code)
+    for _ in range(2):
+        agent.sandbox.execute(code)
 
     start = time.time()
-    iterations = 10000
+    iterations = 10 # Process spawning is heavy
     for _ in range(iterations):
-        agent._execute_python(code)
+        agent.sandbox.execute(code)
     end = time.time()
 
     print(f"Execution time for {iterations} calls: {end - start:.4f}s")

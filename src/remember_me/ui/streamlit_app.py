@@ -141,6 +141,9 @@ with st.sidebar:
         except FileNotFoundError:
             st.error("No brain file found.")
 
+    st.markdown("---")
+    show_slang = st.checkbox("Show S-Lang Trace", value=True, help="Visualize the Agent's internal reasoning process.")
+
 # --- MAIN: COGNITIVE MATRIX ---
 st.title("REMEMBER ME // COGNITIVE MATRIX")
 
@@ -190,10 +193,15 @@ with tab1:
                 st.session_state.messages.append({"role": "assistant", "content": f"⛔ {response}"})
             else:
                 # Show Internal Monologue (S-Lang)
-                with st.expander("💭 Internal Monologue (S-Lang Trace)"):
-                     mode = telemetry.get("signal", {}).get("mode", "UNKNOWN")
-                     s_lang_trace = f"$Target: INPUT >> $Mode: {mode} !! Action: EXECUTE"
-                     st.code(s_lang_trace, language="bash")
+                mode = telemetry.get("signal", {}).get("mode", "UNKNOWN")
+                s_lang_trace = f"$Target: INPUT >> $Mode: {mode} !! Action: EXECUTE"
+
+                if show_slang:
+                    st.caption("💭 **S-Lang Trace:**")
+                    st.code(s_lang_trace, language="bash")
+
+                # Full Telemetry in Expander
+                with st.expander("🔍 Deep Telemetry (JSON)"):
                      st.json(telemetry)
 
                 # Show Tool Outputs

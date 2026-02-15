@@ -302,8 +302,9 @@ class CSNPManager:
                 return self._context_cache
 
         # Slow Path: Filter invalid memories
+        # ⚡ Bolt: Enumerate loop is faster than zip (avoids tuple unpacking overhead)
         valid_texts = [
-            text for text, h in zip(self.text_buffer, self.hash_buffer)
+            self.text_buffer[i] for i, h in enumerate(self.hash_buffer)
             if h in known_hashes
         ]
 

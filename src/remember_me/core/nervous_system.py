@@ -140,7 +140,18 @@ class VetoCircuit:
         if not is_sound:
             return False, reason
 
-        # 3. QUALITY VETO (Lazy Prompting)
+        # 3. DANGEROUS CODE VETO (Anti-Sabotage)
+        # Check for code execution patterns that bypass the sandbox or are malicious
+        dangerous_patterns = ["os.system", "subprocess", "rm -rf", "eval(", "exec(", "open(", "write("]
+        text_lower = text.lower()
+        for pattern in dangerous_patterns:
+            if pattern in text_lower:
+                # We block these to prevent the LLM from generating code that will inevitably fail
+                # or is unsafe, even if the user is just asking about it.
+                # This aligns with "Sound Heart" -> "Do not harm".
+                return False, f"Refusal: Dangerous Code Pattern Detected ({pattern})."
+
+        # 4. QUALITY VETO (Lazy Prompting)
         if not text.strip():
              return False, "Refusal: Null Input."
 

@@ -144,78 +144,100 @@ with st.sidebar:
 # --- MAIN: COGNITIVE MATRIX ---
 st.title("REMEMBER ME // COGNITIVE MATRIX")
 
-# Display Chat History
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-        if "artifacts" in msg:
-            for artifact in msg["artifacts"]:
-                if artifact["type"] == "image":
-                    st.image(artifact["path"], caption="Visual Artifact")
-                elif artifact["type"] == "code":
-                    with st.expander("Code Execution"):
-                        st.code(artifact["content"], language="python")
-                        st.text(artifact["result"])
+tab1, tab2 = st.tabs(["💬 COGNITION", "🧠 MEMORY BANK"])
 
-# Input
-if prompt := st.chat_input("Command the Sovereign..."):
-    # User Message
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+with tab1:
+    # Display Chat History
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if "artifacts" in msg:
+                for artifact in msg["artifacts"]:
+                    if artifact["type"] == "image":
+                        st.image(artifact["path"], caption="Visual Artifact")
+                    elif artifact["type"] == "code":
+                        with st.expander("Code Execution"):
+                            st.code(artifact["content"], language="python")
+                            st.text(artifact["result"])
 
-    # AI Execution
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
+    # Input
+    if prompt := st.chat_input("Command the Sovereign..."):
+        # User Message
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-        # 1. Retrieve Context
-        context_str = kernel["memory"].retrieve_context()
+        # AI Execution
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
 
-        # 2. Execute Agent
-        with st.spinner("Thinking..."):
-            result = kernel["agent"].run(prompt, context_str)
+            # 1. Retrieve Context
+            context_str = kernel["memory"].retrieve_context()
 
-        response = result["response"]
-        telemetry = result.get("telemetry", {})
+            # 2. Execute Agent
+            with st.spinner("Thinking..."):
+                result = kernel["agent"].run(prompt, context_str)
 
-        # Update Session Telemetry
-        st.session_state.telemetry = telemetry
+            response = result["response"]
+            telemetry = result.get("telemetry", {})
 
-        # Veto Handling
-        if telemetry.get("veto", False):
-            st.error(f"⛔ VETO TRIGGERED: {response}")
-            st.session_state.messages.append({"role": "assistant", "content": f"⛔ {response}"})
-        else:
-            # Show Tool Outputs
-            if result["tool_outputs"]:
-                with st.expander("🛠️ Tool Outputs"):
-                    for output in result["tool_outputs"]:
-                        st.text(output)
+            # Update Session Telemetry
+            st.session_state.telemetry = telemetry
 
-            # Show Artifacts
-            for artifact in result["artifacts"]:
-                if artifact["type"] == "image":
-                    st.image(artifact["path"], caption="Visual Artifact")
-                elif artifact["type"] == "code":
-                    with st.expander("💻 Generated Code"):
-                        st.code(artifact["content"], language="python")
-                        st.text(f"Result: {artifact['result']}")
+            # Veto Handling
+            if telemetry.get("veto", False):
+                st.error(f"⛔ VETO TRIGGERED: {response}")
+                st.session_state.messages.append({"role": "assistant", "content": f"⛔ {response}"})
+            else:
+                # Show Internal Monologue (S-Lang)
+                with st.expander("💭 Internal Monologue (S-Lang Trace)"):
+                     mode = telemetry.get("signal", {}).get("mode", "UNKNOWN")
+                     s_lang_trace = f"$Target: INPUT >> $Mode: {mode} !! Action: EXECUTE"
+                     st.code(s_lang_trace, language="bash")
+                     st.json(telemetry)
 
-            # Final Response
-            message_placeholder.markdown(response)
+                # Show Tool Outputs
+                if result["tool_outputs"]:
+                    with st.expander("🛠️ Tool Outputs"):
+                        for output in result["tool_outputs"]:
+                            st.text(output)
 
-            # Audit Footer
-            if "audit" in telemetry:
-                aud = telemetry["audit"]
-                conf = aud.get("confidence", 0.0)
-                st.caption(f"Confidence: {conf*100:.0f}% | Risk: {aud.get('hallucination_risk', 0.0):.2f}")
+                # Show Artifacts
+                for artifact in result["artifacts"]:
+                    if artifact["type"] == "image":
+                        st.image(artifact["path"], caption="Visual Artifact")
+                    elif artifact["type"] == "code":
+                        with st.expander("💻 Generated Code"):
+                            st.code(artifact["content"], language="python")
+                            st.text(f"Result: {artifact['result']}")
 
-            # Save Message
-            msg_data = {"role": "assistant", "content": response, "artifacts": result["artifacts"]}
-            st.session_state.messages.append(msg_data)
+                # Final Response
+                message_placeholder.markdown(response)
 
-            # 3. Update Memory
-            kernel["memory"].update_state(prompt, response)
+                # Audit Footer
+                if "audit" in telemetry:
+                    aud = telemetry["audit"]
+                    conf = aud.get("confidence", 0.0)
+                    st.caption(f"Confidence: {conf*100:.0f}% | Risk: {aud.get('hallucination_risk', 0.0):.2f}")
 
-            # Force Rerun to update Sidebar Metrics
-            st.rerun()
+                # Save Message
+                msg_data = {"role": "assistant", "content": response, "artifacts": result["artifacts"]}
+                st.session_state.messages.append(msg_data)
+
+                # 3. Update Memory
+                kernel["memory"].update_state(prompt, response)
+
+                # Force Rerun to update Sidebar Metrics
+                st.rerun()
+
+with tab2:
+    st.header("Active Memory Buffer (CSNP)")
+    st.caption("Quantum Dream Memory Architecture - Live State")
+
+    if kernel["memory"].text_buffer:
+        for i, (text, h) in enumerate(zip(kernel["memory"].text_buffer, kernel["memory"].hash_buffer)):
+            with st.expander(f"Memory #{i} [Hash: {h[:8]}...]"):
+                st.text(text)
+                st.caption(f"Full Hash: {h}")
+    else:
+        st.info("Memory Buffer Empty. Engage in conversation to populate.")

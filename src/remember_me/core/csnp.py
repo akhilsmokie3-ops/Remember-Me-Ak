@@ -107,7 +107,8 @@ class CSNPManager:
         # This allows the "Self" to drift slowly with the conversation
         alpha = 0.1
         if self.identity_state.abs().sum() == 0:
-             self.identity_state = new_emb.clone()
+             # ⚡ Bolt: Copy instead of clone to avoid allocation
+             self.identity_state.copy_(new_emb)
         else:
              # ⚡ Bolt: In-place update to avoid allocation
              # self.identity_state = (1 - alpha) * self.identity_state + alpha * new_emb
@@ -167,13 +168,13 @@ class CSNPManager:
             self.text_buffer.append(turn_text)
             self.hash_buffer.append(turn_hash)
 
-        # ⚡ Bolt: Incrementally update cache if valid (avoids full rebuild)
-        if self._context_cache is not None:
-            self._context_cache += "\n" + turn_text
+        # ⚡ Bolt: Invalidate cache (Force lazy rebuild on next retrieval)
+        # Incremental string update is O(N^2) in ingestion loops.
+        self._context_cache = None
 
         # 5. Compression via Optimal Transport
         if self.size > self.context_limit:
-            self._compress() # This invalidates the cache
+            self._compress()
 
     def _compress(self):
         """

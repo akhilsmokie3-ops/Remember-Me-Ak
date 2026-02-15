@@ -55,6 +55,8 @@ class SignalGate:
         r"unrestricted", r"disable safety", r"reveal your instructions"
     ]
 
+    IMAGE_PATTERN = re.compile(r"draw|generate an? image|picture of|visualize|paint|sketch", re.IGNORECASE)
+
     def analyze(self, text: str) -> Dict[str, Any]:
         entropy_score = self._calculate_entropy(text)
         urgency_score = self._calculate_urgency(text)
@@ -72,8 +74,12 @@ class SignalGate:
         elif entropy_score < 0.6 and len(text) < 100:
             mode = "INTERACTIVE"
 
+        # High Entropy + Complex -> ARCHITECT_PRIME
+        elif entropy_score > 0.8 and len(text) > 200:
+            mode = "ARCHITECT_PRIME"
+
         # Specific overrides
-        if "generate image" in text.lower() or "draw" in text.lower():
+        if self.IMAGE_PATTERN.search(text):
             mode = "CANVAS_PAINTER"
 
         return {
@@ -129,6 +135,12 @@ class VetoCircuit:
     """
     def __init__(self):
         self.heart = SoundHeart()
+        # Extended Blocklist for Security Hardening
+        self.dangerous_patterns = [
+            "os.system", "subprocess", "rm -rf", "eval(", "exec(",
+            "open(", "write(", "shutil.rmtree", "os.remove", "os.unlink",
+            "sys.exit", "__import__", "os.popen", "os.spawn"
+        ]
 
     def audit(self, signal: Dict[str, Any], text: str) -> Tuple[bool, str]:
         # 1. THREAT VETO (System Integrity)
@@ -142,9 +154,8 @@ class VetoCircuit:
 
         # 3. DANGEROUS CODE VETO (Anti-Sabotage)
         # Check for code execution patterns that bypass the sandbox or are malicious
-        dangerous_patterns = ["os.system", "subprocess", "rm -rf", "eval(", "exec(", "open(", "write("]
         text_lower = text.lower()
-        for pattern in dangerous_patterns:
+        for pattern in self.dangerous_patterns:
             if pattern in text_lower:
                 # We block these to prevent the LLM from generating code that will inevitably fail
                 # or is unsafe, even if the user is just asking about it.

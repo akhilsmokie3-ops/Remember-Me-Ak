@@ -3,6 +3,13 @@ import time
 import os
 import sys
 
+# Try to import psutil for hardware sensing, fallback if missing
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+
 # Add src to path for absolute imports (remember_me package resolution)
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
@@ -62,13 +69,28 @@ if "messages" not in st.session_state:
 
 if "telemetry" not in st.session_state:
     st.session_state.telemetry = {
-        "signal": {"mode": "IDLE", "entropy": 0.0, "urgency": 0.0},
-        "audit": {"confidence": 0.0, "hallucination_risk": 0.0}
+        "signal": {"mode": "IDLE", "entropy": 0.0, "urgency": 0.0, "threat": 0.0, "platform": "UNKNOWN"},
+        "audit": {"confidence": 0.0, "hallucination_risk": 0.0},
+        "ois_budget": 100,
+        "s_lang_trace": ""
     }
 
 # --- SIDEBAR: NEURAL MONITORING ---
 with st.sidebar:
     st.title("🧠 NEURAL STATUS")
+
+    # 0. System Health (Physical Grounding)
+    st.caption("PHYSICAL SUBSTRATE")
+    if PSUTIL_AVAILABLE:
+        cpu = psutil.cpu_percent()
+        ram = psutil.virtual_memory().percent
+        c1, c2 = st.columns(2)
+        c1.metric("CPU", f"{cpu}%")
+        c2.metric("RAM", f"{ram}%")
+    else:
+        st.warning("Telemetry Offline (psutil missing)")
+
+    st.markdown("---")
 
     # 1. Model Selection
     model_keys = list(kernel["engine"].MODELS.keys())
@@ -107,11 +129,13 @@ with st.sidebar:
     # Signal Mode & Urgency
     sig = st.session_state.telemetry.get("signal", {})
     mode = sig.get("mode", "IDLE")
-    st.info(f"MODE: {mode}")
+    platform = sig.get("platform", "UNKNOWN")
+    st.info(f"MODE: {mode} [{platform}]")
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     c1.metric("Entropy", f"{sig.get('entropy', 0.0):.2f}")
     c2.metric("Urgency", f"{sig.get('urgency', 0.0):.2f}")
+    c3.metric("Threat", f"{sig.get('threat', 0.0):.2f}")
 
     # OIS Budget
     ois = st.session_state.telemetry.get("ois_budget", 100)
@@ -193,10 +217,9 @@ with tab1:
                 st.session_state.messages.append({"role": "assistant", "content": f"⛔ {response}"})
             else:
                 # Show Internal Monologue (S-Lang)
-                mode = telemetry.get("signal", {}).get("mode", "UNKNOWN")
-                s_lang_trace = f"$Target: INPUT >> $Mode: {mode} !! Action: EXECUTE"
+                s_lang_trace = telemetry.get("s_lang_trace", "")
 
-                if show_slang:
+                if show_slang and s_lang_trace:
                     st.caption("💭 **S-Lang Trace:**")
                     st.code(s_lang_trace, language="bash")
 
@@ -226,7 +249,8 @@ with tab1:
                 if "audit" in telemetry:
                     aud = telemetry["audit"]
                     conf = aud.get("confidence", 0.0)
-                    st.caption(f"Confidence: {conf*100:.0f}% | Risk: {aud.get('hallucination_risk', 0.0):.2f}")
+                    fatigue = aud.get("fatigue", 0.0)
+                    st.caption(f"Confidence: {conf*100:.0f}% | Fatigue: {fatigue*100:.0f}% | OIS Budget: {telemetry.get('ois_budget', 0)}")
 
                 # Save Message
                 msg_data = {"role": "assistant", "content": response, "artifacts": result["artifacts"]}

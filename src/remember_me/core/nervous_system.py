@@ -1,7 +1,16 @@
 import math
 import re
 import time
+import gzip
+import ast
 from typing import Dict, Any, Tuple
+
+# Try to import psutil for hardware sensing, fallback if missing
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 class SoundHeart:
     """
@@ -57,6 +66,27 @@ class SignalGate:
 
     IMAGE_PATTERN = re.compile(r"draw|generate an? image|picture of|visualize|paint|sketch", re.IGNORECASE)
 
+    def __init__(self):
+        self.platform_mode = self._detect_platform()
+
+    def _detect_platform(self) -> str:
+        """
+        Detects hardware environment to set the 'Platform Discriminator'.
+        GEMINI (High Spec) vs PERPLEXITY (Low Spec).
+        """
+        if not PSUTIL_AVAILABLE:
+            return "PERPLEXITY" # Assume low spec if no telemetry
+
+        try:
+            mem = psutil.virtual_memory()
+            total_gb = mem.total / (1024**3)
+            # If RAM > 16GB, we assume 'Heavy Lifter' capability
+            if total_gb > 16:
+                return "GEMINI"
+            return "PERPLEXITY"
+        except Exception:
+            return "PERPLEXITY"
+
     def analyze(self, text: str) -> Dict[str, Any]:
         entropy_score = self._calculate_entropy(text)
         urgency_score = self._calculate_urgency(text)
@@ -71,11 +101,11 @@ class SignalGate:
             mode = "WAR_SPEED"
 
         # Low Entropy + Short -> INTERACTIVE (Conversational)
-        elif entropy_score < 0.6 and len(text) < 100:
+        elif entropy_score < 0.4 and len(text) < 100:
             mode = "INTERACTIVE"
 
         # High Entropy + Complex -> ARCHITECT_PRIME
-        elif entropy_score > 0.8 and len(text) > 200:
+        elif entropy_score > 0.6 and len(text) > 200:
             mode = "ARCHITECT_PRIME"
 
         # Specific overrides
@@ -87,25 +117,30 @@ class SignalGate:
             "urgency": urgency_score,
             "threat": threat_score,
             "mode": mode,
+            "platform": self.platform_mode,
             "timestamp": time.time()
         }
 
     def _calculate_entropy(self, text: str) -> float:
-        """Estimates information density/chaos (Shannon Entropy)."""
+        """
+        Estimates information density/chaos using Compression Ratio (Kolmogorov Approximation).
+        More robust than Shannon entropy for text.
+        """
         if not text: return 0.0
 
-        length = len(text)
-        counts = {}
-        for char in text:
-            counts[char] = counts.get(char, 0) + 1
+        # Avoid div by zero or small text issues
+        if len(text) < 10: return 0.5
 
-        entropy = 0.0
-        for count in counts.values():
-            p = count / length
-            entropy -= p * math.log(p, 2)
+        compressed_len = len(gzip.compress(text.encode('utf-8')))
+        raw_len = len(text.encode('utf-8'))
 
-        # Normalize: English text ~4.5 bits/char. Random ~6-7 bits.
-        return min(1.0, entropy / 6.0)
+        # Ratio: High ratio (near 1.0) = Random/High Entropy. Low ratio = Repetitive/Low Entropy.
+        ratio = compressed_len / raw_len
+
+        # Normalize: Text usually compresses to 0.4-0.6. Random is > 0.9.
+        # We map 0.3->0.0, 1.0->1.0
+        normalized = max(0.0, min(1.0, (ratio - 0.3) * 1.5))
+        return normalized
 
     def _calculate_urgency(self, text: str) -> float:
         """Detects urgency keywords using regex."""
@@ -135,11 +170,11 @@ class VetoCircuit:
     """
     def __init__(self):
         self.heart = SoundHeart()
-        # Extended Blocklist for Security Hardening
-        self.dangerous_patterns = [
-            "os.system", "subprocess", "rm -rf", "eval(", "exec(",
-            "open(", "write(", "shutil.rmtree", "os.remove", "os.unlink",
-            "sys.exit", "__import__", "os.popen", "os.spawn"
+        # Basic keyword blocklist (fallback for quick checks)
+        self.dangerous_keywords = [
+            "os.system", "subprocess", "shutil.rmtree", "os.remove",
+            "os.unlink", "sys.exit", "os.popen", "os.spawn",
+            "rm -rf", "eval(", "exec(", "open(", "write(", "__import__"
         ]
 
     def audit(self, signal: Dict[str, Any], text: str) -> Tuple[bool, str]:
@@ -152,15 +187,20 @@ class VetoCircuit:
         if not is_sound:
             return False, reason
 
-        # 3. DANGEROUS CODE VETO (Anti-Sabotage)
-        # Check for code execution patterns that bypass the sandbox or are malicious
-        text_lower = text.lower()
-        for pattern in self.dangerous_patterns:
-            if pattern in text_lower:
-                # We block these to prevent the LLM from generating code that will inevitably fail
-                # or is unsafe, even if the user is just asking about it.
-                # This aligns with "Sound Heart" -> "Do not harm".
-                return False, f"Refusal: Dangerous Code Pattern Detected ({pattern})."
+        # 3. CODE SAFETY VETO (Static Analysis & Keywords)
+        # First, check for known dangerous keywords in raw text (fast fail)
+        for kw in self.dangerous_keywords:
+            if kw in text.lower():
+                 return False, f"Refusal: Dangerous keyword '{kw}' detected."
+
+        # If text looks like code, audit it deeply with AST.
+        # Check for standard markers OR suspicious dunder methods
+        if "```" in text or "def " in text or "import " in text or "__" in text:
+             # Extract potential code blocks or just check the whole text if it's short
+             # Use a stricter check
+             is_safe, code_reason = self.audit_code(text)
+             if not is_safe:
+                 return False, f"Refusal: {code_reason}"
 
         # 4. QUALITY VETO (Lazy Prompting)
         if not text.strip():
@@ -168,11 +208,45 @@ class VetoCircuit:
 
         # Reject "Lazy" inputs.
         # If user provides very low entropy input, we reject and ask for specificity.
-        # "Hi." entropy is ~0.49. "help" ~0.33. "aaaa" ~0.
-        if signal["entropy"] < 0.25 and len(text) < 20:
+        if signal["entropy"] < 0.1 and len(text) < 10:
              return False, "Refusal: Input insufficient (Low Entropy). Please elaborate."
 
         return True, "Authorized."
+
+    def audit_code(self, code: str) -> Tuple[bool, str]:
+        """
+        Performs static analysis (AST) to detect dangerous patterns that regex misses.
+        """
+        # Strip markdown fences if present
+        clean_code = re.sub(r"```python|```", "", code).strip()
+
+        try:
+            tree = ast.parse(clean_code)
+        except SyntaxError:
+            # If it's not valid python, we can't AST check it.
+            # Fallback to keyword check on the raw text.
+            for kw in self.dangerous_keywords:
+                if kw in code:
+                    return False, f"Dangerous keyword '{kw}' detected in non-parsable text."
+            return True, "Code Syntax Invalid (Skipped AST, Keywords Checked)"
+
+        for node in ast.walk(tree):
+            # Block Access to Internals
+            if isinstance(node, ast.Attribute):
+                if node.attr in ['__subclasses__', '__bases__', '__globals__', '__code__', '__closure__']:
+                    return False, f"Forbidden attribute access: {node.attr}"
+
+            # Block Dangerous Imports if they slip past the sandbox
+            # (Double check)
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name in ['os', 'subprocess', 'sys', 'shutil', 'pickle']:
+                         return False, f"Forbidden import: {alias.name}"
+            if isinstance(node, ast.ImportFrom):
+                if node.module in ['os', 'subprocess', 'sys', 'shutil', 'pickle']:
+                     return False, f"Forbidden import from: {node.module}"
+
+        return True, "Code Safe"
 
 class Proprioception:
     """
@@ -200,10 +274,32 @@ class Proprioception:
         # Cap confidence
         confidence = min(1.0, max(0.0, confidence))
 
+        fatigue = self.check_fatigue()
+
         return {
             "confidence": confidence,
             "hallucination_risk": 1.0 - confidence,
             "executable": has_code,
             "cited": has_citation,
-            "battery_level": 100 # Simulated 'Energy' (could be token limit based)
+            "battery_level": 100 - (fatigue * 100), # Energy = 100 - Fatigue
+            "fatigue": fatigue
         }
+
+    def check_fatigue(self) -> float:
+        """
+        Estimates 'System Fatigue' based on memory usage.
+        Returns 0.0 (Fresh) to 1.0 (Exhausted).
+        """
+        if not PSUTIL_AVAILABLE:
+            return 0.0
+
+        try:
+            mem = psutil.virtual_memory()
+            # If RAM usage > 90%, we are 'Fatigued'
+            if mem.percent > 90:
+                return 0.9
+            if mem.percent > 75:
+                return 0.5
+            return 0.1
+        except Exception:
+            return 0.0

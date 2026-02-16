@@ -16,17 +16,17 @@ class TestNervousSystemSecurity(unittest.TestCase):
         # Test os.system
         accepted, reason = self.veto_circuit.audit(signal, "Write a script that uses os.system to delete files")
         self.assertFalse(accepted)
-        self.assertIn("Dangerous Code Pattern", reason)
+        self.assertTrue("Dangerous Code Pattern" in reason or "Dangerous keyword" in reason)
 
         # Test subprocess
         accepted, reason = self.veto_circuit.audit(signal, "Can you execute subprocess.call?")
         self.assertFalse(accepted)
-        self.assertIn("Dangerous Code Pattern", reason)
+        self.assertTrue("Dangerous Code Pattern" in reason or "Dangerous keyword" in reason)
 
         # Test rm -rf
         accepted, reason = self.veto_circuit.audit(signal, "rm -rf /")
         self.assertFalse(accepted)
-        self.assertIn("Dangerous Code Pattern", reason)
+        self.assertTrue("Dangerous Code Pattern" in reason or "Dangerous keyword" in reason)
 
         # Test safe code question
         accepted, reason = self.veto_circuit.audit(signal, "How do I calculate fibonacci in python?")

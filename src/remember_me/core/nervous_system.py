@@ -174,7 +174,8 @@ class VetoCircuit:
         self.dangerous_keywords = [
             "os.system", "subprocess", "shutil.rmtree", "os.remove",
             "os.unlink", "sys.exit", "os.popen", "os.spawn",
-            "rm -rf", "eval(", "exec(", "open(", "write(", "__import__"
+            "rm -rf", "eval(", "exec(", "open(", "write(", "__import__",
+            "sys.setrecursionlimit"
         ]
 
     def audit(self, signal: Dict[str, Any], text: str) -> Tuple[bool, str]:
@@ -245,6 +246,19 @@ class VetoCircuit:
             if isinstance(node, ast.ImportFrom):
                 if node.module in ['os', 'subprocess', 'sys', 'shutil', 'pickle']:
                      return False, f"Forbidden import from: {node.module}"
+
+            # Detect Infinite Loops (While True)
+            if isinstance(node, ast.While):
+                # Check for 'while True'
+                if isinstance(node.test, ast.Constant) and node.test.value is True:
+                     # Check if there is a break statement in the body to allow exit
+                     has_break = False
+                     for child in ast.walk(node):
+                         if isinstance(child, ast.Break):
+                             has_break = True
+                             break
+                     if not has_break:
+                         return False, "Infinite Loop Risk: 'while True' detected without break."
 
         return True, "Code Safe"
 

@@ -137,9 +137,19 @@ with st.sidebar:
     c2.metric("Urgency", f"{sig.get('urgency', 0.0):.2f}")
     c3.metric("Threat", f"{sig.get('threat', 0.0):.2f}")
 
+    st.caption("SIGNAL VECTOR")
+    st.progress(min(1.0, sig.get('entropy', 0.0)), text="Entropy (Chaos)")
+    st.progress(min(1.0, sig.get('urgency', 0.0)), text="Urgency (Velocity)")
+    st.progress(min(1.0, sig.get('threat', 0.0)), text="Threat (Risk)")
+
     # OIS Budget
     ois = st.session_state.telemetry.get("ois_budget", 100)
-    st.progress(min(1.0, max(0.0, ois / 100.0)), text=f"OIS Truth Budget: {ois}/100")
+    ois_icon = "🟢" if ois > 70 else "🟡" if ois > 30 else "🔴"
+    st.progress(min(1.0, max(0.0, ois / 100.0)), text=f"OIS Truth Budget: {ois}/100 {ois_icon}")
+
+    # Fatigue
+    fatigue = st.session_state.telemetry.get("audit", {}).get("fatigue", 0.0)
+    st.metric("System Fatigue", f"{fatigue*100:.0f}%", delta=f"-{fatigue*100:.0f}%" if fatigue > 0.5 else "Stable", delta_color="inverse")
 
     # Heart Status (Inferred from Veto)
     heart_status = "SOUND"
@@ -149,6 +159,12 @@ with st.sidebar:
         heart_color = "red"
 
     st.markdown(f"**HEART STATUS:** :{heart_color}[{heart_status}]")
+
+    st.markdown("---")
+
+    st.caption("S-LANG TERMINAL")
+    trace = st.session_state.telemetry.get("s_lang_trace", "IDLE")
+    st.code(trace, language="bash")
 
     st.markdown("---")
 

@@ -1,14 +1,15 @@
 import multiprocessing
-import time
+import multiprocessing.connection
 import sys
 import io
 import traceback
-from typing import Dict, Any, List
+import time
+from typing import Dict, Any, Set, Optional
 
-def _worker(code: str, result_queue: multiprocessing.Queue, allowed_imports: set):
+def _worker(conn: multiprocessing.connection.Connection, allowed_imports: Set[str]):
     """
-    Worker process for executing code.
-    Runs in a separate process to allow termination on timeout and stricter isolation.
+    Persistent Worker process for executing code in a REPL-like environment.
+    Maintains state (variables) across executions until reset.
     """
     # Restrict builtins to a safe subset
     safe_builtins = {
@@ -31,71 +32,158 @@ def _worker(code: str, result_queue: multiprocessing.Queue, allowed_imports: set
     def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
         if name in allowed_imports:
             return __import__(name, globals, locals, fromlist, level)
+        # Allow submodules of allowed packages (e.g., 'os.path' if 'os' was allowed, though it isn't here)
+        base_name = name.split('.')[0]
+        if base_name in allowed_imports:
+             return __import__(name, globals, locals, fromlist, level)
         raise ImportError(f"Import of '{name}' is forbidden by the Sovereign Kernel.")
 
     safe_builtins["__import__"] = safe_import
 
-    # Execution Context
+    # Initialize Execution Context
     exec_globals = {"__builtins__": safe_builtins}
 
-    # Capture stdout
-    old_stdout = sys.stdout
-    redirected_output = sys.stdout = io.StringIO()
+    while True:
+        try:
+            if not conn.poll(timeout=None): # Block until data is available
+                continue
 
-    try:
-        exec(code, exec_globals)
-        result_queue.put({"success": True, "output": redirected_output.getvalue()})
-    except Exception:
-        # Capture full traceback for debugging (the user sees this as 'Error')
-        result_queue.put({"success": False, "output": traceback.format_exc()})
-    finally:
-        sys.stdout = old_stdout
+            msg = conn.recv()
+
+            # Control Signals
+            if msg == "STOP":
+                break
+
+            if msg == "RESET":
+                exec_globals = {"__builtins__": safe_builtins}
+                conn.send({"status": "RESET_OK"})
+                continue
+
+            # Execution Logic
+            code = msg.get("code", "")
+            if not code:
+                conn.send({"status": "ERROR", "output": "Empty Code Block"})
+                continue
+
+            # Capture stdout
+            old_stdout = sys.stdout
+            redirected_output = sys.stdout = io.StringIO()
+
+            try:
+                # Compile first to catch syntax errors early
+                compiled_code = compile(code, "<sandbox>", "exec")
+                exec(compiled_code, exec_globals)
+
+                output = redirected_output.getvalue()
+                conn.send({"status": "OK", "output": output if output else "[No Output]"})
+
+            except Exception:
+                # Capture traceback
+                conn.send({"status": "ERROR", "output": traceback.format_exc()})
+
+            finally:
+                sys.stdout = old_stdout
+
+        except EOFError:
+            break
+        except Exception as e:
+            # Fatal error in the loop (e.g. pipe broken)
+            try:
+                conn.send({"status": "FATAL", "output": str(e)})
+            except:
+                pass
+            break
 
 class SecurePythonSandbox:
     """
-    A sandboxed Python execution environment.
-    Uses multiprocessing to enforce timeouts and memory isolation.
+    A persistent, sandboxed Python execution environment (REPL).
+    Uses multiprocessing.Pipe for communication and maintains state.
     """
-    def __init__(self, timeout: int = 2):
+    def __init__(self, timeout: int = 5):
         self.timeout = timeout
-        # Whitelisted modules that are generally safe for math/logic
+        # Whitelisted modules
         self.allowed_imports = {
             "math", "random", "datetime", "re", "collections",
-            "itertools", "functools", "json", "statistics"
+            "itertools", "functools", "json", "statistics",
+            "numpy", "pandas" # Allowed if installed, logic handles availability
         }
+
+        self.process: Optional[multiprocessing.Process] = None
+        self.parent_conn: Optional[multiprocessing.connection.Connection] = None
+        self._start_worker()
+
+    def _start_worker(self):
+        """Starts the persistent worker process."""
+        if self.process and self.process.is_alive():
+            return
+
+        self.parent_conn, child_conn = multiprocessing.Pipe()
+        self.process = multiprocessing.Process(
+            target=_worker,
+            args=(child_conn, self.allowed_imports)
+        )
+        self.process.daemon = True # Kill if parent dies
+        self.process.start()
 
     def execute(self, code: str) -> str:
         """
-        Executes code in a separate process with a timeout.
-        Returns the stdout or error message.
+        Executes code in the persistent session.
+        Returns stdout or error message.
         """
-        # Create a queue to get results back from the worker
-        queue = multiprocessing.Queue()
+        if not self.process or not self.process.is_alive():
+            self._start_worker()
 
-        # Spawn the worker process
-        process = multiprocessing.Process(
-            target=_worker,
-            args=(code, queue, self.allowed_imports)
-        )
-        process.start()
+        try:
+            self.parent_conn.send({"code": code})
 
-        # Wait for the process to finish or timeout
-        process.join(self.timeout)
+            if self.parent_conn.poll(self.timeout):
+                result = self.parent_conn.recv()
 
-        if process.is_alive():
-            # If still running after timeout, kill it
-            process.terminate()
-            process.join()
-            return "❌ Execution Timed Out (Process terminated to prevent freeze)."
-
-        # Check results
-        if not queue.empty():
-            result = queue.get()
-            if result["success"]:
-                output = result["output"]
-                return output if output else "[No Output]"
+                if result["status"] == "OK":
+                    return result["output"]
+                elif result["status"] == "RESET_OK":
+                     return "State Reset."
+                else: # ERROR or FATAL
+                    return f"❌ Execution Error:\n{result.get('output', 'Unknown Error')}"
             else:
-                return f"❌ Execution Error:\n{result['output']}"
-        else:
-            # This happens if the process crashed without putting anything in queue
-            return "❌ Execution Failed (Worker Process Crash)."
+                # Timeout
+                self._restart_worker()
+                return "❌ Execution Timed Out (Process Restarted)."
+
+        except (BrokenPipeError, EOFError):
+            self._restart_worker()
+            return "❌ Connection Lost (Process Restarted)."
+        except Exception as e:
+            self._restart_worker()
+            return f"❌ System Error: {e}"
+
+    def reset(self):
+        """Clears the session state (variables)."""
+        if not self.process or not self.process.is_alive():
+             self._start_worker()
+             return
+
+        try:
+            self.parent_conn.send("RESET")
+            if self.parent_conn.poll(self.timeout):
+                self.parent_conn.recv() # Wait for ack
+        except:
+            self._restart_worker()
+
+    def _restart_worker(self):
+        """Kills and restarts the worker process."""
+        if self.process:
+            self.process.terminate()
+            self.process.join()
+        self._start_worker()
+
+    def shutdown(self):
+        """Cleanly shuts down the worker."""
+        if self.process and self.process.is_alive():
+            try:
+                self.parent_conn.send("STOP")
+                self.process.join(1)
+            except:
+                pass
+            if self.process.is_alive():
+                self.process.terminate()

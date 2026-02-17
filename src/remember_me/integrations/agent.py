@@ -61,6 +61,27 @@ class SovereignAgent:
         if signal["entropy"] > 0.8:
             ois_budget -= 10
 
+        # Reset Sandbox if context shifts significantly (Heuristic)
+        if signal["mode"] == "ARCHITECT_PRIME" and signal["entropy"] > 0.9:
+             print("⚡ Orchestrator: Resetting Sandbox State due to High Entropy Shift.")
+             self.sandbox.reset()
+
+        # Check for manual reset command
+        if "reset python" in user_input.lower() or "clear session" in user_input.lower():
+             self.sandbox.reset()
+             return {
+                 "response": "Python Sandbox State Reset.",
+                 "tool_outputs": [],
+                 "artifacts": [],
+                 "telemetry": {
+                     "signal": signal,
+                     "veto": False,
+                     "audit": {},
+                     "ois_budget": ois_budget,
+                     "s_lang_trace": "$Input >> RESET !! ACTION"
+                 }
+             }
+
         # 2. VETO CIRCUIT (Hierarchical Veto)
         accepted, refusal_reason = self.veto_circuit.audit(signal, user_input)
         if not accepted:
@@ -74,6 +95,21 @@ class SovereignAgent:
                     "audit": {},
                     "ois_budget": 0,
                     "s_lang_trace": "$Input >> VETO !! REJECT"
+                }
+            }
+
+        # Check Budget after Veto
+        if ois_budget <= 0:
+            return {
+                "response": "SYSTEM HALT: OIS Truth Budget Depleted. Too many assumptions required.",
+                "tool_outputs": [],
+                "artifacts": [],
+                "telemetry": {
+                    "signal": signal,
+                    "veto": True,
+                    "audit": {},
+                    "ois_budget": 0,
+                    "s_lang_trace": "$Input >> OIS_CHECK !! HALT"
                 }
             }
 
@@ -213,6 +249,42 @@ class SovereignAgent:
         # If confidence is too low, we might append a warning (or in a loop, regenerate).
         if audit_result["confidence"] < 0.6:
             final_response += "\n\n[WARNING: LOW CONFIDENCE - VERIFY INDEPENDENTLY]"
+
+        # 7. T-CELL VERIFICATION (Active Defense)
+        # If confidence is moderate-low and we haven't already executed code to support it
+        if audit_result["confidence"] < 0.8 and "CODE" not in detected_intents:
+             print("🛡️ T-CELL: Triggering Active Verification Loop...")
+
+             # Ask Engine to generate a verification script
+             verify_prompt = (
+                 f"The following claim needs verification: '{final_response[:300]}'. "
+                 "Write a Python script to check this claim mathematically or logically. "
+                 "Print 'VERIFIED' if true, or the correct value if false. "
+                 "Return ONLY the code in ```python``` blocks."
+             )
+             try:
+                 # Use a lightweight call if possible, but here we reuse the main engine
+                 verify_code_resp = self.engine.generate_response(verify_prompt, "", system_prompt="You are a QA Engineer. Return ONLY code.")
+
+                 verify_match = re.search(r"```python(.*?)```", verify_code_resp, re.DOTALL)
+                 if verify_match:
+                     v_code = verify_match.group(1).strip()
+                     # Audit the verification code itself!
+                     v_safe, _ = self.veto_circuit.audit_code(v_code)
+                     if v_safe:
+                         v_result = self.sandbox.execute(v_code)
+
+                         # Analyze Result
+                         if "VERIFIED" in v_result:
+                              final_response += "\n\n[T-CELL: Verified]"
+                         elif "Error" not in v_result and len(v_result) < 200:
+                              # Correction Needed
+                              correction = f"\n\n[T-CELL CORRECTION]: Verification analysis suggests: {v_result.strip()}"
+                              final_response += correction
+                              # Refund some budget for self-correction
+                              ois_budget += 5
+             except Exception as e:
+                 print(f"T-CELL Error: {e}")
 
         # S-Lang Trace Construction
         s_lang_trace = f"$Target: INPUT >> $Mode: {signal['mode']} >> $Entropy: {signal['entropy']:.2f} !! Action: EXECUTE"

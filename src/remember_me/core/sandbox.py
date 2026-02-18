@@ -6,11 +6,29 @@ import traceback
 import time
 from typing import Dict, Any, Set, Optional
 
+# Try to import resource for Unix-based resource limiting
+try:
+    import resource
+    RESOURCE_LIMITS_AVAILABLE = True
+except ImportError:
+    RESOURCE_LIMITS_AVAILABLE = False
+
 def _worker(conn: multiprocessing.connection.Connection, allowed_imports: Set[str]):
     """
     Persistent Worker process for executing code in a REPL-like environment.
     Maintains state (variables) across executions until reset.
     """
+
+    # ⚡ Bolt: Apply Resource Limits (Memory) to prevent OOM DOS
+    if RESOURCE_LIMITS_AVAILABLE:
+        try:
+            # Limit Address Space (RAM) to 512MB Soft / 1GB Hard
+            # This prevents infinite recursion or massive array allocation from crashing the host
+            resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 1024 * 1024 * 1024))
+        except (ValueError, OSError):
+            # Ignore if system doesn't support AS limit or values are invalid
+            pass
+
     # Restrict builtins to a safe subset
     safe_builtins = {
         "abs": abs, "all": all, "any": any, "ascii": ascii, "bin": bin,
@@ -26,6 +44,7 @@ def _worker(conn: multiprocessing.connection.Connection, allowed_imports: Set[st
         "reversed": reversed, "round": round, "set": set, "setattr": setattr,
         "slice": slice, "sorted": sorted, "staticmethod": staticmethod, "str": str,
         "sum": sum, "super": super, "tuple": tuple, "type": type, "zip": zip,
+        "vars": vars, # Useful for debugging
     }
 
     # Custom __import__ to whitelist allowed modules
@@ -77,6 +96,8 @@ def _worker(conn: multiprocessing.connection.Connection, allowed_imports: Set[st
                 output = redirected_output.getvalue()
                 conn.send({"status": "OK", "output": output if output else "[No Output]"})
 
+            except MemoryError:
+                conn.send({"status": "ERROR", "output": "Memory Limit Exceeded (RAM > 512MB)."})
             except Exception:
                 # Capture traceback
                 conn.send({"status": "ERROR", "output": traceback.format_exc()})

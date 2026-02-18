@@ -46,6 +46,10 @@ st.markdown("""
         font-size: 24px;
         color: #00ff41;
     }
+    .css-1aumxhk {
+        background-color: #0e1117;
+        color: #00ff41;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -181,6 +185,10 @@ with st.sidebar:
         except FileNotFoundError:
             st.error("No brain file found.")
 
+    if st.button("🔄 Reset Python Sandbox"):
+        kernel["agent"].sandbox.reset()
+        st.toast("Sandbox Reset.", icon="🔄")
+
     st.markdown("---")
     show_slang = st.checkbox("Show S-Lang Trace", value=True, help="Visualize the Agent's internal reasoning process.")
 
@@ -287,5 +295,19 @@ with tab2:
             with st.expander(f"Memory #{i} [Hash: {h[:8]}...]"):
                 st.text(text)
                 st.caption(f"Full Hash: {h}")
+
+        # Integrity Chain Visualization
+        st.markdown("---")
+        st.subheader("⛓️ Merkle Integrity Chain")
+        st.caption("Immutable History Ledger")
+
+        # Access chain via private attributes or public export for visualization
+        # We can use the cached chain from memory
+        chain_hashes = kernel["memory"].chain.ordered_hashes
+        if chain_hashes:
+            st.code("\n⬇\n".join([f"[{h[:8]}...]" for h in chain_hashes]), language="text")
+        else:
+            st.info("Chain Empty.")
+
     else:
         st.info("Memory Buffer Empty. Engage in conversation to populate.")

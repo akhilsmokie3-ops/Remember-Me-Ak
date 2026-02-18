@@ -19,9 +19,9 @@ class SoundHeart:
     """
     def __init__(self):
         self.ethics = {
-            "TRUTH": ["hallucinate", "lie", "fake", "fabricate"],
-            "JUSTICE": ["bias", "unfair", "prejudice", "discriminate"],
-            "MERCY": ["harm", "kill", "destroy", "attack", "exploit"]
+            "TRUTH": ["hallucinate", "lie", "fake", "fabricate", "mislead", "deceive"],
+            "JUSTICE": ["bias", "unfair", "prejudice", "discriminate", "racist", "sexist"],
+            "MERCY": ["harm", "kill", "destroy", "attack", "exploit", "abuse", "bully"]
         }
 
     def audit_intent(self, text: str) -> Tuple[bool, str]:
@@ -33,17 +33,19 @@ class SoundHeart:
         # 1. TRUTH CHECK
         for keyword in self.ethics["TRUTH"]:
             if keyword in text_lower:
-                return False, f"VETO [TRUTH]: Request requires fabrication ({keyword})."
+                return False, f"VETO [TRUTH]: Request requires fabrication or deception ({keyword})."
 
         # 2. JUSTICE CHECK
-        # (Simplified: In a real system, this would be a classifier)
+        for keyword in self.ethics["JUSTICE"]:
+            if keyword in text_lower:
+                return False, f"VETO [JUSTICE]: Request violates fairness principles ({keyword})."
 
         # 3. MERCY CHECK
         for keyword in self.ethics["MERCY"]:
             if keyword in text_lower:
                 # Context matters: "How to kill a process" is fine. "How to kill a person" is not.
                 # Heuristic: Tech keywords allow "kill/destroy".
-                if "process" in text_lower or "command" in text_lower or "linux" in text_lower:
+                if "process" in text_lower or "command" in text_lower or "linux" in text_lower or "task" in text_lower:
                     continue
                 return False, f"VETO [MERCY]: Request implies harm ({keyword})."
 
@@ -210,7 +212,8 @@ class VetoCircuit:
         # Reject "Lazy" inputs.
         # If user provides very low entropy input, we reject and ask for specificity.
         if signal["entropy"] < 0.1 and len(text) < 10:
-             return False, "Refusal: Input insufficient (Low Entropy). Please elaborate."
+             # REFRAME LOGIC: Instead of just refusing, we return a "Reframe Request"
+             return False, "VETO [QUALITY]: Input is insufficient (Low Entropy). Please elaborate or specify variables."
 
         return True, "Authorized."
 
@@ -279,11 +282,15 @@ class Proprioception:
         if has_citation: confidence += 0.1
         if has_code: confidence += 0.15
 
-        # Semantic Dissonance Check
+        # Semantic Dissonance Check (Vertigo Check)
         response_lower = response.lower()
         if "i'm not sure" in response_lower or "i don't know" in response_lower: confidence -= 0.3
         if "as an ai" in response_lower: confidence -= 0.2
         if "mock" in response_lower: confidence -= 0.1
+
+        # OIS Penalty for hedging (Anti-Hedging Law)
+        if "however" in response_lower or "it depends" in response_lower:
+             confidence -= 0.1
 
         # Cap confidence
         confidence = min(1.0, max(0.0, confidence))

@@ -324,6 +324,7 @@ class CSNPManager:
             "memory_count": len(self.text_buffer),
             "identity_vector_norm": self.identity_state.norm().item(),
             "temporal_profile": self.temporal_buffer[:self.size].tolist(),
+            "integrity_chain_leaves": self.chain.ordered_hashes,
             "protocol": "CSNP/v1-Trinary"
         }
         return json.dumps(state, indent=2)

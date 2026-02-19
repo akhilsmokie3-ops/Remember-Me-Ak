@@ -85,6 +85,13 @@ with st.sidebar:
 
     # 0. System Health (Physical Grounding)
     st.caption("PHYSICAL SUBSTRATE")
+
+    # GPU Status (from Telemetry)
+    gpu_ok = st.session_state.telemetry.get("signal", {}).get("gpu_available", False)
+    gpu_status = "ONLINE" if gpu_ok else "OFFLINE"
+    gpu_color = "green" if gpu_ok else "red"
+    st.markdown(f"**GPU ACCELERATION:** :{gpu_color}[{gpu_status}]")
+
     if PSUTIL_AVAILABLE:
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
@@ -246,6 +253,21 @@ with tab1:
                 if show_slang and s_lang_trace:
                     st.caption("💭 **S-Lang Trace:**")
                     st.code(s_lang_trace, language="bash")
+
+                # Show Microcosm Trajectories
+                if "microcosm" in telemetry and telemetry["microcosm"]:
+                    with st.expander("🔮 Haiyue Microcosm (Parallel Trajectories)"):
+                        mc = telemetry["microcosm"]
+                        cols = st.columns(3)
+                        with cols[0]:
+                            st.info("Optimistic (+1)")
+                            st.markdown(mc.get("OPTIMISTIC", "N/A"))
+                        with cols[1]:
+                            st.warning("Neutral (0)")
+                            st.markdown(mc.get("NEUTRAL", "N/A"))
+                        with cols[2]:
+                            st.error("Pessimistic (-1)")
+                            st.markdown(mc.get("PESSIMISTIC", "N/A"))
 
                 # Full Telemetry in Expander
                 with st.expander("🔍 Deep Telemetry (JSON)"):

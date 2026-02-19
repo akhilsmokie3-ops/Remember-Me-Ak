@@ -92,7 +92,9 @@ class SovereignAgent:
              }
 
         # 2. VETO CIRCUIT (Hierarchical Veto)
-        accepted, refusal_reason = self.veto_circuit.audit(signal, user_input)
+        accepted, refusal_reason, reframed = self.veto_circuit.audit(signal, user_input)
+
+        # Handle Refusal
         if not accepted:
             ois.deduct(100, "Veto Triggered")
             return {
@@ -107,6 +109,14 @@ class SovereignAgent:
                     "s_lang_trace": "$Input >> VETO !! REJECT"
                 }
             }
+
+        # Handle Reframing (Upgrade Input)
+        if reframed:
+            print(f"⚡ Orchestrator: Reframing Input -> '{reframed}'")
+            # We update the user_input for downstream processing,
+            # but we might want to keep the original for context.
+            # For now, we swap it to ensure high-fidelity execution.
+            user_input = reframed
 
         # Check Budget after Veto
         if not ois.check():
@@ -216,10 +226,46 @@ class SovereignAgent:
         # Combine tool outputs with original context
         augmented_context = context_str + "\n".join(tool_outputs)
 
-        # HAIYUE MICROCOSM: If Turtle Mode, wrap input in Simulation Prompt
+        # HAIYUE MICROCOSM: Parallel Simulation (Turtle Mode Only)
+        microcosm_telemetry = {}
         final_input = user_input
+
         if mode == "TURTLE_INTEGRITY":
-             final_input = self.haiyue.formulate_simulation_prompt(user_input)
+             print("🔮 Orchestrator: Spawning Haiyue Microcosm (3 Timelines)...")
+             # We execute 3 parallel simulations to model the event horizon
+             prompts = {
+                 "OPTIMISTIC": f"Simulate an OPTIMISTIC (+1) outcome/answer for: {user_input}. Be concise.",
+                 "NEUTRAL": f"Simulate a NEUTRAL (0) outcome/answer for: {user_input}. Be concise.",
+                 "PESSIMISTIC": f"Simulate a PESSIMISTIC (-1) outcome/answer for: {user_input}. Focus on risks. Be concise."
+             }
+
+             futures = {}
+             for p_name, p_text in prompts.items():
+                 # Lightweight prompt for simulation
+                 sys_p = f"You are a Simulation Engine. Mode: {p_name}. Output only the simulation."
+                 # Use executor to run in parallel
+                 futures[p_name] = self._executor.submit(self.engine.generate_response, p_text, augmented_context, system_prompt=sys_p)
+
+             # Collect Results
+             simulations = {}
+             for p_name, future in futures.items():
+                 try:
+                     # 15s timeout for simulations
+                     simulations[p_name] = future.result(timeout=15)
+                 except Exception as e:
+                     simulations[p_name] = f"Simulation Failed: {e}"
+
+             microcosm_telemetry = simulations
+
+             # Synthesize for final input
+             final_input = (
+                 f"User Input: {user_input}\n"
+                 f"Simulated Trajectories (Use these to form a robust answer):\n"
+                 f"[OPTIMISTIC]: {simulations['OPTIMISTIC']}\n"
+                 f"[NEUTRAL]: {simulations['NEUTRAL']}\n"
+                 f"[PESSIMISTIC]: {simulations['PESSIMISTIC']}\n"
+                 "SYNTHESIS: Converge on the most robust solution. Do not output the trajectories, just the result."
+             )
 
         # Main Thread: Generate Text Response
         # Pass a custom system prompt that includes the default + mode.
@@ -305,7 +351,8 @@ class SovereignAgent:
                 "veto": False,
                 "audit": audit_result,
                 "ois_budget": ois.budget,
-                "s_lang_trace": s_lang_trace
+                "s_lang_trace": s_lang_trace,
+                "microcosm": microcosm_telemetry
             }
         }
 

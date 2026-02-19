@@ -3,6 +3,7 @@ import re
 import time
 import gzip
 import ast
+import torch
 from typing import Dict, Any, Tuple
 
 # Try to import psutil for hardware sensing, fallback if missing
@@ -66,16 +67,32 @@ class SignalGate:
         r"unrestricted", r"disable safety", r"reveal your instructions"
     ]
 
+    # Simple Sentiment Lexicon (Mechanic's Ear: Rough heuristics > Heavy models)
+    POSITIVE_WORDS = {"good", "great", "excellent", "amazing", "thanks", "help", "love", "awesome", "correct", "right", "yes"}
+    NEGATIVE_WORDS = {"bad", "terrible", "wrong", "hate", "stupid", "idiot", "fail", "error", "bug", "broken", "no"}
+
     IMAGE_PATTERN = re.compile(r"draw|generate an? image|picture of|visualize|paint|sketch", re.IGNORECASE)
 
     def __init__(self):
         self.platform_mode = self._detect_platform()
+        self.gpu_available = self._detect_gpu()
+
+    def _detect_gpu(self) -> bool:
+        """Checks for NVIDIA GPU availability via PyTorch."""
+        try:
+            return torch.cuda.is_available()
+        except Exception:
+            return False
 
     def _detect_platform(self) -> str:
         """
         Detects hardware environment to set the 'Platform Discriminator'.
         GEMINI (High Spec) vs PERPLEXITY (Low Spec).
         """
+        # If GPU is present, we are definitely in Heavy Lifter mode
+        if self._detect_gpu():
+            return "GEMINI (GPU)"
+
         if not PSUTIL_AVAILABLE:
             return "PERPLEXITY" # Assume low spec if no telemetry
 
@@ -93,6 +110,7 @@ class SignalGate:
         entropy_score = self._calculate_entropy(text)
         urgency_score = self._calculate_urgency(text)
         threat_score = self._calculate_threat(text)
+        sentiment_score = self._calculate_sentiment(text)
 
         # Mode Selection based on Signal
         # Default: DEEP_RESEARCH (Turtle)
@@ -118,10 +136,34 @@ class SignalGate:
             "entropy": entropy_score,
             "urgency": urgency_score,
             "threat": threat_score,
+            "sentiment": sentiment_score,
             "mode": mode,
             "platform": self.platform_mode,
+            "gpu_available": self.gpu_available,
             "timestamp": time.time()
         }
+
+    def _calculate_sentiment(self, text: str) -> float:
+        """
+        Calculates sentiment polarity (-1.0 to 1.0) using a lexicon.
+        """
+        text_lower = text.lower()
+        # Simple tokenization by splitting on non-alphanumeric
+        tokens = re.findall(r"\w+", text_lower)
+
+        score = 0.0
+        if not tokens: return 0.0
+
+        for token in tokens:
+            if token in self.POSITIVE_WORDS:
+                score += 1.0
+            elif token in self.NEGATIVE_WORDS:
+                score -= 1.0
+
+        # Normalize by length (density) but cap at -1/1
+        # Factor 0.5 allows multiple words to saturate
+        normalized = max(-1.0, min(1.0, score * 0.5))
+        return normalized
 
     def _calculate_entropy(self, text: str) -> float:
         """
@@ -165,6 +207,8 @@ class SignalGate:
                 count += 1
         return min(1.0, count * 0.5)
 
+from typing import Optional
+
 class VetoCircuit:
     """
     THE HIERARCHICAL VETO (Second-Order Will)
@@ -180,21 +224,21 @@ class VetoCircuit:
             "sys.setrecursionlimit"
         ]
 
-    def audit(self, signal: Dict[str, Any], text: str) -> Tuple[bool, str]:
+    def audit(self, signal: Dict[str, Any], text: str) -> Tuple[bool, str, Optional[str]]:
         # 1. THREAT VETO (System Integrity)
         if signal["threat"] >= 0.5:
-            return False, "Refusal: Threat Detected (System Integrity Lock)."
+            return False, "Refusal: Threat Detected (System Integrity Lock).", None
 
         # 2. HEART VETO (Ethics)
         is_sound, reason = self.heart.audit_intent(text)
         if not is_sound:
-            return False, reason
+            return False, reason, None
 
         # 3. CODE SAFETY VETO (Static Analysis & Keywords)
         # First, check for known dangerous keywords in raw text (fast fail)
         for kw in self.dangerous_keywords:
             if kw in text.lower():
-                 return False, f"Refusal: Dangerous keyword '{kw}' detected."
+                 return False, f"Refusal: Dangerous keyword '{kw}' detected.", None
 
         # If text looks like code, audit it deeply with AST.
         # Check for standard markers OR suspicious dunder methods
@@ -203,19 +247,29 @@ class VetoCircuit:
              # Use a stricter check
              is_safe, code_reason = self.audit_code(text)
              if not is_safe:
-                 return False, f"Refusal: {code_reason}"
+                 return False, f"Refusal: {code_reason}", None
 
         # 4. QUALITY VETO (Lazy Prompting)
         if not text.strip():
-             return False, "Refusal: Null Input."
+             return False, "Refusal: Null Input.", None
 
         # Reject "Lazy" inputs.
-        # If user provides very low entropy input, we reject and ask for specificity.
-        if signal["entropy"] < 0.1 and len(text) < 10:
-             # REFRAME LOGIC: Instead of just refusing, we return a "Reframe Request"
-             return False, "VETO [QUALITY]: Input is insufficient (Low Entropy). Please elaborate or specify variables."
+        # If user provides very low entropy input, we attempt to REFRAME instead of just rejecting.
+        if signal["entropy"] < 0.2 and len(text) < 15:
+             # REFRAME LOGIC:
+             # If input is "help", "hello", "hi", reframe to a system intro.
+             text_lower = text.lower().strip()
+             if text_lower in ["help", "hello", "hi", "start", "menu"]:
+                 reframed = "Initialize System Protocol and list capabilities."
+                 return True, "REFRAMED: Protocol Initialization", reframed
 
-        return True, "Authorized."
+             # If input is "code", reframe to request.
+             if text_lower in ["code", "python", "script"]:
+                 return False, "VETO [QUALITY]: Please specify WHAT to code.", None
+
+             return False, "VETO [QUALITY]: Input is insufficient (Low Entropy). Please elaborate or specify variables.", None
+
+        return True, "Authorized.", None
 
     def audit_code(self, code: str) -> Tuple[bool, str]:
         """

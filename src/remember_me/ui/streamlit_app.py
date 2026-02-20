@@ -143,6 +143,12 @@ with st.sidebar:
     platform = sig.get("platform", "UNKNOWN")
     st.info(f"MODE: {mode} [{platform}]")
 
+    # Power Telemetry (Device State Mapping)
+    if "battery" in sig:
+        bat = sig["battery"]
+        plug_icon = "🔌" if bat['plugged'] else "🔋"
+        st.caption(f"POWER: {plug_icon} {bat['percent']}%")
+
     c1, c2, c3 = st.columns(3)
     c1.metric("Entropy", f"{sig.get('entropy', 0.0):.2f}")
     c2.metric("Urgency", f"{sig.get('urgency', 0.0):.2f}")

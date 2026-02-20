@@ -15,14 +15,25 @@ class LlamaCppClient:
     """Client for local llama-server (OpenAI Compatible)."""
     def __init__(self, base_url="http://localhost:8081"):
         self.base_url = base_url
+        self._is_alive = None # Cache status
 
     def ping(self):
+        if self._is_alive is not None:
+             return self._is_alive
+
         try:
             # Simple check, /health or just root
             requests.get(f"{self.base_url}/health", timeout=1)
+            self._is_alive = True
             return True
         except:
+            self._is_alive = False
             return False
+
+    def check_connection(self):
+        """Force re-check of connection status."""
+        self._is_alive = None
+        return self.ping()
 
     def generate(self, messages, max_tokens=512, temperature=0.7):
         try:
@@ -89,6 +100,17 @@ class ModelRegistry:
         """
         Downloads and loads the specified model key (Transformers mode).
         """
+        # Manual Override for Remote Engine
+        if key == "remote":
+            if self.client.check_connection():
+                self.use_remote = True
+                self.model_id = "remote-llama"
+                print("✓ Switched to Remote Engine.")
+                return True
+            else:
+                print("❌ Remote server unreachable.")
+                return False
+
         if self.use_remote:
             print(f"⚠ Remote server active. Ignoring local load for '{key}'.")
             return True

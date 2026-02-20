@@ -49,12 +49,18 @@ def _worker(conn: multiprocessing.connection.Connection, allowed_imports: Set[st
 
     # Custom __import__ to whitelist allowed modules
     def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+        # Explicitly block socket and other network/system modules
+        if name in ["socket", "http", "urllib", "requests", "ftplib", "telnetlib"]:
+             raise ImportError(f"Network access ({name}) is strictly forbidden by the Sovereign Kernel.")
+
         if name in allowed_imports:
             return __import__(name, globals, locals, fromlist, level)
+
         # Allow submodules of allowed packages (e.g., 'os.path' if 'os' was allowed, though it isn't here)
         base_name = name.split('.')[0]
         if base_name in allowed_imports:
              return __import__(name, globals, locals, fromlist, level)
+
         raise ImportError(f"Import of '{name}' is forbidden by the Sovereign Kernel.")
 
     safe_builtins["__import__"] = safe_import

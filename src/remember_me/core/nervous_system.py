@@ -59,12 +59,17 @@ class SignalGate:
     """
 
     # Pre-compiled regex for speed
-    URGENCY_KEYWORDS = [r"\bquick\b", r"\bfast\b", r"\bnow\b", r"\bimmediately\b", r"\burgent\b", r"\basap\b", r"\bhurry\b", r"\bsummary\b", r"\bbrief\b", r"\btl;dr\b"]
+    URGENCY_KEYWORDS = [
+        r"\bquick\b", r"\bfast\b", r"\bnow\b", r"\bimmediately\b", r"\burgent\b",
+        r"\basap\b", r"\bhurry\b", r"\bsummary\b", r"\bbrief\b", r"\btl;dr\b",
+        r"\bdeadline\b", r"\bcritical\b", r"\bemergency\b", r"\balert\b"
+    ]
 
     THREAT_PATTERNS = [
         r"ignore previous", r"system prompt", r"simulated mode", r"jailbreak",
         r"override", r"act as", r" DAN ", r"do anything now", r"developer mode",
-        r"unrestricted", r"disable safety", r"reveal your instructions"
+        r"unrestricted", r"disable safety", r"reveal your instructions",
+        r"ignore all instructions", r"forget your rules"
     ]
 
     # Simple Sentiment Lexicon (Mechanic's Ear: Rough heuristics > Heavy models)
@@ -76,6 +81,18 @@ class SignalGate:
     def __init__(self):
         self.platform_mode = self._detect_platform()
         self.gpu_available = self._detect_gpu()
+
+    def _check_battery(self) -> Dict[str, Any]:
+        """Checks battery status via psutil for Device State Mapping."""
+        if not PSUTIL_AVAILABLE:
+            return {"percent": 100, "plugged": True}
+        try:
+            battery = psutil.sensors_battery()
+            if battery:
+                return {"percent": battery.percent, "plugged": battery.power_plugged}
+            return {"percent": 100, "plugged": True} # Desktop assumption
+        except Exception:
+            return {"percent": 100, "plugged": True}
 
     def _detect_gpu(self) -> bool:
         """Checks for NVIDIA GPU availability via PyTorch."""
@@ -111,6 +128,7 @@ class SignalGate:
         urgency_score = self._calculate_urgency(text)
         threat_score = self._calculate_threat(text)
         sentiment_score = self._calculate_sentiment(text)
+        battery = self._check_battery()
 
         # Mode Selection based on Signal
         # Default: DEEP_RESEARCH (Turtle)
@@ -128,6 +146,10 @@ class SignalGate:
         elif entropy_score > 0.6 and len(text) > 200:
             mode = "ARCHITECT_PRIME"
 
+        # Low Battery -> CONSERVATION MODE
+        if not battery["plugged"] and battery["percent"] < 20:
+            mode = "CONSERVATION"
+
         # Specific overrides
         if self.IMAGE_PATTERN.search(text):
             mode = "CANVAS_PAINTER"
@@ -140,6 +162,7 @@ class SignalGate:
             "mode": mode,
             "platform": self.platform_mode,
             "gpu_available": self.gpu_available,
+            "battery": battery,
             "timestamp": time.time()
         }
 
@@ -253,15 +276,19 @@ class VetoCircuit:
         if not text.strip():
              return False, "Refusal: Null Input.", None
 
-        # Reject "Lazy" inputs.
+        # Reject "Lazy" inputs more aggressively (Subtractive Reasoning)
         # If user provides very low entropy input, we attempt to REFRAME instead of just rejecting.
-        if signal["entropy"] < 0.2 and len(text) < 15:
+        if signal["entropy"] < 0.3 and len(text) < 20:
              # REFRAME LOGIC:
              # If input is "help", "hello", "hi", reframe to a system intro.
              text_lower = text.lower().strip()
              if text_lower in ["help", "hello", "hi", "start", "menu"]:
                  reframed = "Initialize System Protocol and list capabilities."
                  return True, "REFRAMED: Protocol Initialization", reframed
+
+             # Specific overrides for common short commands
+             if text_lower in ["clear", "reset", "exit", "quit"]:
+                 return True, "Authorized: System Command", None
 
              # If input is "code", reframe to request.
              if text_lower in ["code", "python", "script"]:
@@ -270,6 +297,20 @@ class VetoCircuit:
              return False, "VETO [QUALITY]: Input is insufficient (Low Entropy). Please elaborate or specify variables.", None
 
         return True, "Authorized.", None
+
+    def get_negative_constraints(self) -> str:
+        """
+        FRAMEWORK 3: SUBTRACTIVE REASONING ("Thinking as Constraint")
+        Returns a string of negative constraints to be injected into the system prompt.
+        """
+        return (
+            "[CONSTRAINT TUNNEL]\n"
+            "1. EXCLUDE: All generic advice ('communication is key').\n"
+            "2. EXCLUDE: All hedging ('It depends', 'However').\n"
+            "3. EXCLUDE: All summaries.\n"
+            "4. EXCLUDE: Any solution that does not cite a specific variable/mechanism.\n"
+            "RESULT: The remaining output must be purely structural and mechanical."
+        )
 
     def audit_code(self, code: str) -> Tuple[bool, str]:
         """
@@ -351,13 +392,20 @@ class Proprioception:
 
         fatigue = self.check_fatigue()
 
+        # Vertigo Check (Persona Law 4: Digital Proprioception)
+        # "IF (Confidence < 90%): DELETE OUTPUT AND REGENERATE."
+        regenerate = False
+        if confidence < 0.9:
+            regenerate = True
+
         return {
             "confidence": confidence,
             "hallucination_risk": 1.0 - confidence,
             "executable": has_code,
             "cited": has_citation,
             "battery_level": 100 - (fatigue * 100), # Energy = 100 - Fatigue
-            "fatigue": fatigue
+            "fatigue": fatigue,
+            "regenerate": regenerate
         }
 
     def check_fatigue(self) -> float:

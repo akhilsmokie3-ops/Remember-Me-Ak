@@ -34,29 +34,33 @@ class SovereignSearch:
                 titles = data[1]
                 urls = data[3]
                 
-                # 2. Fetch extracts for top results
-                for i in range(len(titles)):
-                    title = titles[i]
-                    url = urls[i]
-                    
-                    # Get extract
+                # 2. Fetch extracts for top results in batch
+                if titles:
+                    # Wikipedia API supports up to 50 titles per request
                     extract_params = {
                         "action": "query",
                         "prop": "extracts",
                         "exintro": True,
                         "explaintext": True,
-                        "titles": title,
+                        "titles": "|".join(titles),
                         "format": "json"
                     }
                     ex_res = requests.get(search_url, params=extract_params, headers=self.headers, timeout=5)
-                    snippet = "No details."
+
+                    extracts = {}
                     if ex_res.status_code == 200:
-                        pages = ex_res.json()["query"]["pages"]
-                        for pid in pages:
-                            snippet = pages[pid].get("extract", "No details")[:500] + "..."
-                            break
+                        pages = ex_res.json().get("query", {}).get("pages", {})
+                        for pid, page in pages.items():
+                            p_title = page.get("title")
+                            if p_title:
+                                extracts[p_title] = page.get("extract", "No details")[:500] + "..."
                     
-                    results.append(f"[{title}]({url}): {snippet}")
+                    for i in range(len(titles)):
+                        title = titles[i]
+                        url = urls[i]
+                        # Use the title to look up the extract
+                        snippet = extracts.get(title, "No details.")
+                        results.append(f"[{title}]({url}): {snippet}")
         except Exception:
             pass
             

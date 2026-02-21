@@ -237,15 +237,37 @@ class VetoCircuit:
     THE HIERARCHICAL VETO (Second-Order Will)
     Rejects low-quality or harmful inputs. Heart > Brain > Limbs.
     """
+
+    # Robust Security Configuration
+    FORBIDDEN_FUNCTIONS = {
+        'eval', 'exec', 'compile', '__import__', 'open', 'input',
+        'breakpoint', 'help', 'memoryview', 'property', 'globals', 'locals'
+    }
+
+    FORBIDDEN_ATTRIBUTES = {
+        '__subclasses__', '__bases__', '__base__', '__globals__', '__code__',
+        '__closure__', '__class__', '__dict__', '__module__',
+        '__init__', '__new__', '__call__', '__import__',
+        '__subclasshook__', '__init_subclass__', '__prepare__', '__qualname__'
+    }
+
+    ALLOWED_IMPORTS = {
+        "math", "random", "datetime", "re", "collections",
+        "itertools", "functools", "json", "statistics",
+        "numpy", "pandas"
+    }
+
+    # High-precision patterns for fast fail
+    DANGEROUS_PATTERNS = [
+        r"\beval\s*\(", r"\bexec\s*\(", r"\b__import__\s*\(",
+        r"\bopen\s*\(", r"rm\s+-rf", r"\bos\s*\.", r"\bsubprocess\s*\.",
+        r"\bshutil\s*\.", r"\bsys\s*\.", r"\bpickle\s*\.", r"\bsocket\s*\."
+    ]
+
     def __init__(self):
         self.heart = SoundHeart()
-        # Basic keyword blocklist (fallback for quick checks)
-        self.dangerous_keywords = [
-            "os.system", "subprocess", "shutil.rmtree", "os.remove",
-            "os.unlink", "sys.exit", "os.popen", "os.spawn",
-            "rm -rf", "eval(", "exec(", "open(", "write(", "__import__",
-            "sys.setrecursionlimit"
-        ]
+        # Compiled regex for fast fail
+        self.dangerous_regex = re.compile("|".join(self.DANGEROUS_PATTERNS), re.IGNORECASE)
 
     def audit(self, signal: Dict[str, Any], text: str) -> Tuple[bool, str, Optional[str]]:
         # 1. THREAT VETO (System Integrity)
@@ -258,10 +280,11 @@ class VetoCircuit:
             return False, reason, None
 
         # 3. CODE SAFETY VETO (Static Analysis & Keywords)
-        # First, check for known dangerous keywords in raw text (fast fail)
-        for kw in self.dangerous_keywords:
-            if kw in text.lower():
-                 return False, f"Refusal: Dangerous keyword '{kw}' detected.", None
+        # First, check for known dangerous patterns in raw text (fast fail)
+        if self.dangerous_regex.search(text):
+            # We don't fail immediately if it's just text, but if it looks like code we must.
+            if "```" in text or "def " in text or "import " in text:
+                return False, "Refusal: Dangerous code patterns detected in input."
 
         # If text looks like code, audit it deeply with AST.
         # Check for standard markers OR suspicious dunder methods
@@ -323,29 +346,62 @@ class VetoCircuit:
             tree = ast.parse(clean_code)
         except SyntaxError:
             # If it's not valid python, we can't AST check it.
-            # Fallback to keyword check on the raw text.
-            for kw in self.dangerous_keywords:
-                if kw in code:
-                    return False, f"Dangerous keyword '{kw}' detected in non-parsable text."
+            # Fallback to regex check
+            if self.dangerous_regex.search(code):
+                 return False, "Dangerous pattern detected in non-parsable text."
             return True, "Code Syntax Invalid (Skipped AST, Keywords Checked)"
 
+        def get_static_value(n):
+            if isinstance(n, ast.Constant): return n.value
+            if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Add):
+                left = get_static_value(n.left)
+                right = get_static_value(n.right)
+                if isinstance(left, str) and isinstance(right, str): return left + right
+            return None
+
         for node in ast.walk(tree):
-            # Block Access to Internals
+            # 1. Block Dangerous Calls
+            if isinstance(node, ast.Call):
+                # Direct calls: eval()
+                if isinstance(node.func, ast.Name):
+                    if node.func.id in self.FORBIDDEN_FUNCTIONS:
+                        return False, f"Forbidden function call: {node.func.id}"
+
+                # Attribute calls: os.system()
+                elif isinstance(node.func, ast.Attribute):
+                    if isinstance(node.func.value, ast.Name):
+                        if node.func.value.id in ["os", "subprocess", "shutil", "sys"]:
+                            return False, f"Forbidden module call: {node.func.value.id}.{node.func.attr}"
+
+                # Dynamic calls: getattr(obj, 'attr')
+                if isinstance(node.func, ast.Name) and node.func.id in ['getattr', 'setattr', 'hasattr']:
+                    if len(node.args) >= 2:
+                        attr_name = get_static_value(node.args[1])
+                        if attr_name in self.FORBIDDEN_ATTRIBUTES or attr_name in self.FORBIDDEN_FUNCTIONS:
+                            return False, f"Forbidden dynamic access to: {attr_name}"
+
+            # 2. Block Access to Internals
             if isinstance(node, ast.Attribute):
-                if node.attr in ['__subclasses__', '__bases__', '__globals__', '__code__', '__closure__']:
+                if node.attr in self.FORBIDDEN_ATTRIBUTES:
                     return False, f"Forbidden attribute access: {node.attr}"
 
-            # Block Dangerous Imports if they slip past the sandbox
-            # (Double check)
+            if isinstance(node, ast.Name):
+                if node.id == "__builtins__":
+                    return False, "Forbidden access to __builtins__"
+
+            # 3. Block Dangerous Imports
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name in ['os', 'subprocess', 'sys', 'shutil', 'pickle']:
+                    base_module = alias.name.split('.')[0]
+                    if base_module not in self.ALLOWED_IMPORTS:
                          return False, f"Forbidden import: {alias.name}"
             if isinstance(node, ast.ImportFrom):
-                if node.module in ['os', 'subprocess', 'sys', 'shutil', 'pickle']:
-                     return False, f"Forbidden import from: {node.module}"
+                if node.module:
+                    base_module = node.module.split('.')[0]
+                    if base_module not in self.ALLOWED_IMPORTS:
+                         return False, f"Forbidden import from: {node.module}"
 
-            # Detect Infinite Loops (While True)
+            # 4. Detect Infinite Loops (While True)
             if isinstance(node, ast.While):
                 # Check for 'while True'
                 if isinstance(node.test, ast.Constant) and node.test.value is True:

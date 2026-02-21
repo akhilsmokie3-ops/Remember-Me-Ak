@@ -28,8 +28,8 @@ class TestNervousSystem(unittest.TestCase):
         self.assertTrue(signal["urgency"] > 0.0) # Might depend on exact keywords
 
         # Test Entropy
-        # Use a long repetitive string so gzip ratio is low
-        text = "aaaaa bbbbb " * 50
+        # Use a longer repetitive string for low entropy, as small strings don't compress well.
+        text = "aaaaa bbbbb " * 20
         signal = self.signal_gate.analyze(text)
         self.assertTrue(signal["entropy"] < 0.5, f"Entropy was {signal['entropy']}")
 

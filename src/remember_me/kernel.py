@@ -84,6 +84,8 @@ class Kernel:
         if not telemetry.get("veto", False):
             self.shield.update_state(user_input, response)
             logger.info("MEMORY: State Updated.")
+            # Idle Consolidation
+            self.shield.consolidate_memory()
         else:
             logger.warning("MEMORY: Update Skipped (Vetoed).")
             

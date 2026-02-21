@@ -176,11 +176,24 @@ class CSNPManager:
         if self.size > self.context_limit:
             self._compress()
 
-    def _compress(self):
+    def consolidate_memory(self):
+        """
+        Idle-time optimization.
+        If memory > 80% capacity, preemptively compress to clear space.
+        """
+        threshold = int(self.context_limit * 0.8)
+        if self.size > threshold:
+             print(f"🧠 CSNP: Preemptive Consolidation (Size {self.size} -> {threshold})...")
+             self._compress(target_size=threshold)
+
+    def _compress(self, target_size: Optional[int] = None):
         """
         Reduces memory size while preserving maximum information mass
         relative to the Identity State.
         """
+        if target_size is None:
+            target_size = self.context_limit
+
         # Calculate Wasserstein Mass contribution of active memories
         # Only consider valid rows [0..size]
         active_bank = self.memory_bank[:self.size]
@@ -204,7 +217,7 @@ class CSNPManager:
         )
 
         current_size = self.size
-        excess = current_size - self.context_limit
+        excess = current_size - target_size
 
         if excess <= 0:
             return
@@ -240,7 +253,7 @@ class CSNPManager:
             C.div_(-self.metric.epsilon)
             scores = F.softmax(C, dim=0).flatten()
 
-            _, keep_indices = torch.topk(scores, k=self.context_limit)
+            _, keep_indices = torch.topk(scores, k=target_size)
             keep_indices, _ = torch.sort(keep_indices) # Maintain chronological order
 
             # We must reconstruct the buffer for bulk operations

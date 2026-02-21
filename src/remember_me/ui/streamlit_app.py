@@ -93,13 +93,16 @@ with st.sidebar:
     st.markdown(f"**GPU ACCELERATION:** :{gpu_color}[{gpu_status}]")
 
     if PSUTIL_AVAILABLE:
-        cpu = psutil.cpu_percent()
-        ram = psutil.virtual_memory().percent
-        c1, c2 = st.columns(2)
-        c1.metric("CPU", f"{cpu}%")
-        c2.metric("RAM", f"{ram}%")
+        try:
+            cpu = psutil.cpu_percent()
+            ram = psutil.virtual_memory().percent
+            c1, c2 = st.columns(2)
+            c1.metric("CPU", f"{cpu}%")
+            c2.metric("RAM", f"{ram}%")
+        except Exception:
+             st.warning("Telemetry Error")
     else:
-        st.warning("Telemetry Offline (psutil missing)")
+        st.warning("Telemetry Offline")
 
     st.markdown("---")
 
@@ -126,7 +129,10 @@ with st.sidebar:
     col1, col2 = st.columns(2)
 
     # Memory Integrity (Merkle Root Depth / Norm)
-    integrity = kernel["memory"].identity_state.norm().item()
+    try:
+        integrity = kernel["memory"].identity_state.norm().item()
+    except Exception:
+        integrity = 0.0
     col1.metric("Integrity", f"{integrity:.4f}", delta="Stable")
 
     # Context Usage
@@ -302,7 +308,8 @@ with tab1:
                     aud = telemetry["audit"]
                     conf = aud.get("confidence", 0.0)
                     fatigue = aud.get("fatigue", 0.0)
-                    st.caption(f"Confidence: {conf*100:.0f}% | Fatigue: {fatigue*100:.0f}% | OIS Budget: {telemetry.get('ois_budget', 0)}")
+                    retries = aud.get("retry_count", 0)
+                    st.caption(f"Confidence: {conf*100:.0f}% | Retries: {retries} | Fatigue: {fatigue*100:.0f}% | OIS Budget: {telemetry.get('ois_budget', 0)}")
 
                 # Save Message
                 msg_data = {"role": "assistant", "content": response, "artifacts": result["artifacts"]}
@@ -333,7 +340,11 @@ with tab2:
         # We can use the cached chain from memory
         chain_hashes = kernel["memory"].chain.ordered_hashes
         if chain_hashes:
-            st.code("\n⬇\n".join([f"[{h[:8]}...]" for h in chain_hashes]), language="text")
+            md_tree = ""
+            for i, h in enumerate(chain_hashes):
+                connector = "└── " if i == len(chain_hashes)-1 else "├── "
+                md_tree += f"{connector}[Block {i:02d}]: {h[:16]}... (Verified)\n"
+            st.code(md_tree, language="text")
         else:
             st.info("Chain Empty.")
 

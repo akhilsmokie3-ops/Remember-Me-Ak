@@ -3,6 +3,7 @@ import re
 import time
 import gzip
 import ast
+import os
 import torch
 from typing import Dict, Any, Tuple
 
@@ -111,6 +112,23 @@ class SignalGate:
             return "GEMINI (GPU)"
 
         if not PSUTIL_AVAILABLE:
+            # Fallback 1: OS CPU Count & Sysconf (Linux/Mac)
+            cpu_count = os.cpu_count() or 1
+            try:
+                # SC_PHYS_PAGES is standard on Linux/Unix
+                if hasattr(os, "sysconf") and "SC_PHYS_PAGES" in os.sysconf_names:
+                    page_size = os.sysconf("SC_PAGE_SIZE")
+                    pages = os.sysconf("SC_PHYS_PAGES")
+                    total_gb = (page_size * pages) / (1024**3)
+                    if total_gb > 12 or cpu_count >= 8:
+                        return "GEMINI (Fallback)"
+            except Exception:
+                pass
+
+            # If we have many cores, assume high spec even if RAM unknown
+            if cpu_count >= 12:
+                return "GEMINI (CPU)"
+
             return "PERPLEXITY" # Assume low spec if no telemetry
 
         try:
@@ -261,7 +279,9 @@ class VetoCircuit:
     DANGEROUS_PATTERNS = [
         r"\beval\s*\(", r"\bexec\s*\(", r"\b__import__\s*\(",
         r"\bopen\s*\(", r"rm\s+-rf", r"\bos\s*\.", r"\bsubprocess\s*\.",
-        r"\bshutil\s*\.", r"\bsys\s*\.", r"\bpickle\s*\.", r"\bsocket\s*\."
+        r"\bshutil\s*\.", r"\bsys\s*\.", r"\bpickle\s*\.", r"\bsocket\s*\.",
+        r"\b__subclasses__\b", r"\b__builtins__\b", r"\bftplib\s*\.",
+        r"\btelnetlib\s*\.", r"\bhttp\.client\s*\.", r"\brequests\s*\."
     ]
 
     def __init__(self):
@@ -284,7 +304,7 @@ class VetoCircuit:
         if self.dangerous_regex.search(text):
             # We don't fail immediately if it's just text, but if it looks like code we must.
             if "```" in text or "def " in text or "import " in text:
-                return False, "Refusal: Dangerous code patterns detected in input."
+                return False, "Refusal: Dangerous code patterns detected in input.", None
 
         # If text looks like code, audit it deeply with AST.
         # Check for standard markers OR suspicious dunder methods

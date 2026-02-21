@@ -158,15 +158,14 @@ class SovereignAgent:
         # PHASE 2 & 3: HIVE-MIND RETRIEVAL (Search)
         search_future = None
         if "SEARCH" in detected_intents:
-            query = user_input
-            print(f"🕵️ Orchestrator: Triggering Search for '{query[:20]}...' (Parallel)")
-            search_future = self._executor.submit(self.tools.web_search, query)
+            print(f"🕵️ Orchestrator: Triggering Hive-Mind Search (Parallel)...")
+            search_future = self._executor.submit(self._hive_mind_search, user_input, mode)
 
         # Resolve Search if needed for Code or Synthesis
         if search_future:
             try:
-                search_res = search_future.result(timeout=10)
-                tool_outputs.append(f"[SEARCH RESULTS]:\n{search_res}\n")
+                search_res = search_future.result(timeout=15)
+                tool_outputs.append(f"[HIVE-MIND SEARCH RESULTS]:\n{search_res}\n")
             except concurrent.futures.TimeoutError:
                 tool_outputs.append("[SEARCH ERROR]: Timeout.")
                 ois.deduct(15, "Search Timeout")
@@ -257,17 +256,31 @@ class SovereignAgent:
             ois.deduct(int(audit_result["hallucination_risk"] * 40), "Hallucination Risk")
 
         # REGENERATION LOOP (Vertigo Check)
+        max_retries = 3
+        retry_count = 0
+
+        while audit_result.get("regenerate", False) and retry_count < max_retries:
+            print(f"♻️ Proprioception: VERTIGO DETECTED (Confidence {audit_result.get('confidence', 0):.2f}). Regenerating... (Attempt {retry_count+1}/{max_retries})")
+            ois.deduct(10, f"Regeneration Penalty #{retry_count+1}")
+
+            if not ois.check():
+                final_response += "\n\n[SYSTEM FAILURE]: OIS Budget Depleted during regeneration."
+                break
+
+            retry_count += 1
+            # Escalate strictness
+            regen_system = default_system + f"\n[CRITICAL]: Previous output rejected (Attempt {retry_count}). Low Confidence. BE EXACT. CITE SOURCES. NO HEDGING."
+
+            final_response = self.engine.generate_response(final_input, augmented_context, system_prompt=regen_system)
+
+            # Re-audit
+            audit_result = self.proprioception.audit_output(final_response, augmented_context)
+
+        audit_result["retry_count"] = retry_count
+
         if audit_result.get("regenerate", False):
-            print("♻️ Proprioception: VERTIGO DETECTED (Confidence < 90%). Regenerating...")
-            ois.deduct(20, "Regeneration Penalty")
-            if ois.check():
-                # Try once more with a stricter prompt
-                regen_system = default_system + "\n[CRITICAL]: Previous output rejected due to low confidence. BE EXACT. CITE SOURCES."
-                final_response = self.engine.generate_response(final_input, augmented_context, system_prompt=regen_system)
-                # Re-audit
-                audit_result = self.proprioception.audit_output(final_response, augmented_context)
-                if audit_result.get("regenerate", False):
-                     final_response += "\n\n[SYSTEM FAILURE]: Confidence Threshold not met after regeneration."
+             final_response += "\n\n[SYSTEM WARNING]: Confidence Threshold not met after maximum retries."
+             # Do not deduct more, just warn.
 
         # PHASE 7: T-CELL VERIFICATION
         if audit_result["confidence"] < 0.8 and "CODE" not in detected_intents and ois.check():
@@ -295,6 +308,36 @@ class SovereignAgent:
         for match in self.combined_pattern.finditer(text):
             found.add(match.lastgroup)
         return list(found)
+
+    def _hive_mind_search(self, query: str, mode: str) -> str:
+        """
+        Executes parallel searches based on Velocity Mode.
+        """
+        queries = [query]
+
+        # In Turtle Mode, we add specialized queries for depth
+        if mode in ["TURTLE_INTEGRITY", "DEEP_RESEARCH", "ARCHITECT_PRIME"]:
+            # Simple heuristic expansion without LLM call to save time
+            queries.append(f"{query} definitive guide")
+            queries.append(f"{query} latest research 2024")
+
+        print(f"🕵️ Hive-Mind: Dispatching {len(queries)} scouts...")
+
+        results = []
+        # Use a local executor to avoid deadlock on the main pool
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as local_executor:
+            future_to_query = {local_executor.submit(self.tools.web_search, q): q for q in queries}
+            for future in concurrent.futures.as_completed(future_to_query):
+                q = future_to_query[future]
+                try:
+                    res = future.result(timeout=10)
+                    # Limit result length to avoid context explosion
+                    res_snippet = res[:1000] + "..." if len(res) > 1000 else res
+                    results.append(f"--- SOURCE: {q} ---\n{res_snippet}")
+                except Exception as e:
+                    results.append(f"--- ERROR: {q} ---\n{e}")
+
+        return "\n".join(results)
 
     def _initiate_microcosm(self, user_input: str, context: str):
         print("🔮 Orchestrator: Spawning Haiyue Microcosm (3 Timelines)...")
@@ -327,7 +370,9 @@ class SovereignAgent:
              f"[OPTIMISTIC]: {simulations.get('OPTIMISTIC', 'N/A')}\n"
              f"[NEUTRAL]: {simulations.get('NEUTRAL', 'N/A')}\n"
              f"[PESSIMISTIC]: {simulations.get('PESSIMISTIC', 'N/A')}\n"
-             "SYNTHESIS: Converge on the most robust solution. Do not output the trajectories, just the result."
+             "SYNTHESIS INSTRUCTION: You must weigh the Optimistic (Growth), Neutral (Reality), and Pessimistic (Risk) trajectories.\n"
+             "The final answer must be 'The Fastest Coherent Result' that mitigates the Pessimistic risks while capturing Optimistic value.\n"
+             "Output ONLY the final synthesized answer. Do not output the trajectories."
         )
 
     def _halt_response(self, signal, ois, reason) -> Dict[str, Any]:

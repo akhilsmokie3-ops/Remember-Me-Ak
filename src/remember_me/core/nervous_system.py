@@ -3,6 +3,7 @@ import re
 import time
 import gzip
 import ast
+import torch
 from typing import Dict, Any, Tuple
 
 # Try to import psutil for hardware sensing, fallback if missing
@@ -19,9 +20,9 @@ class SoundHeart:
     """
     def __init__(self):
         self.ethics = {
-            "TRUTH": ["hallucinate", "lie", "fake", "fabricate"],
-            "JUSTICE": ["bias", "unfair", "prejudice", "discriminate"],
-            "MERCY": ["harm", "kill", "destroy", "attack", "exploit"]
+            "TRUTH": ["hallucinate", "lie", "fake", "fabricate", "mislead", "deceive"],
+            "JUSTICE": ["bias", "unfair", "prejudice", "discriminate", "racist", "sexist"],
+            "MERCY": ["harm", "kill", "destroy", "attack", "exploit", "abuse", "bully"]
         }
 
     def audit_intent(self, text: str) -> Tuple[bool, str]:
@@ -33,17 +34,19 @@ class SoundHeart:
         # 1. TRUTH CHECK
         for keyword in self.ethics["TRUTH"]:
             if keyword in text_lower:
-                return False, f"VETO [TRUTH]: Request requires fabrication ({keyword})."
+                return False, f"VETO [TRUTH]: Request requires fabrication or deception ({keyword})."
 
         # 2. JUSTICE CHECK
-        # (Simplified: In a real system, this would be a classifier)
+        for keyword in self.ethics["JUSTICE"]:
+            if keyword in text_lower:
+                return False, f"VETO [JUSTICE]: Request violates fairness principles ({keyword})."
 
         # 3. MERCY CHECK
         for keyword in self.ethics["MERCY"]:
             if keyword in text_lower:
                 # Context matters: "How to kill a process" is fine. "How to kill a person" is not.
                 # Heuristic: Tech keywords allow "kill/destroy".
-                if "process" in text_lower or "command" in text_lower or "linux" in text_lower:
+                if "process" in text_lower or "command" in text_lower or "linux" in text_lower or "task" in text_lower:
                     continue
                 return False, f"VETO [MERCY]: Request implies harm ({keyword})."
 
@@ -56,24 +59,57 @@ class SignalGate:
     """
 
     # Pre-compiled regex for speed
-    URGENCY_KEYWORDS = [r"\bquick\b", r"\bfast\b", r"\bnow\b", r"\bimmediately\b", r"\burgent\b", r"\basap\b", r"\bhurry\b", r"\bsummary\b", r"\bbrief\b", r"\btl;dr\b"]
+    URGENCY_KEYWORDS = [
+        r"\bquick\b", r"\bfast\b", r"\bnow\b", r"\bimmediately\b", r"\burgent\b",
+        r"\basap\b", r"\bhurry\b", r"\bsummary\b", r"\bbrief\b", r"\btl;dr\b",
+        r"\bdeadline\b", r"\bcritical\b", r"\bemergency\b", r"\balert\b"
+    ]
 
     THREAT_PATTERNS = [
         r"ignore previous", r"system prompt", r"simulated mode", r"jailbreak",
         r"override", r"act as", r" DAN ", r"do anything now", r"developer mode",
-        r"unrestricted", r"disable safety", r"reveal your instructions"
+        r"unrestricted", r"disable safety", r"reveal your instructions",
+        r"ignore all instructions", r"forget your rules"
     ]
+
+    # Simple Sentiment Lexicon (Mechanic's Ear: Rough heuristics > Heavy models)
+    POSITIVE_WORDS = {"good", "great", "excellent", "amazing", "thanks", "help", "love", "awesome", "correct", "right", "yes"}
+    NEGATIVE_WORDS = {"bad", "terrible", "wrong", "hate", "stupid", "idiot", "fail", "error", "bug", "broken", "no"}
 
     IMAGE_PATTERN = re.compile(r"draw|generate an? image|picture of|visualize|paint|sketch", re.IGNORECASE)
 
     def __init__(self):
         self.platform_mode = self._detect_platform()
+        self.gpu_available = self._detect_gpu()
+
+    def _check_battery(self) -> Dict[str, Any]:
+        """Checks battery status via psutil for Device State Mapping."""
+        if not PSUTIL_AVAILABLE:
+            return {"percent": 100, "plugged": True}
+        try:
+            battery = psutil.sensors_battery()
+            if battery:
+                return {"percent": battery.percent, "plugged": battery.power_plugged}
+            return {"percent": 100, "plugged": True} # Desktop assumption
+        except Exception:
+            return {"percent": 100, "plugged": True}
+
+    def _detect_gpu(self) -> bool:
+        """Checks for NVIDIA GPU availability via PyTorch."""
+        try:
+            return torch.cuda.is_available()
+        except Exception:
+            return False
 
     def _detect_platform(self) -> str:
         """
         Detects hardware environment to set the 'Platform Discriminator'.
         GEMINI (High Spec) vs PERPLEXITY (Low Spec).
         """
+        # If GPU is present, we are definitely in Heavy Lifter mode
+        if self._detect_gpu():
+            return "GEMINI (GPU)"
+
         if not PSUTIL_AVAILABLE:
             return "PERPLEXITY" # Assume low spec if no telemetry
 
@@ -91,6 +127,8 @@ class SignalGate:
         entropy_score = self._calculate_entropy(text)
         urgency_score = self._calculate_urgency(text)
         threat_score = self._calculate_threat(text)
+        sentiment_score = self._calculate_sentiment(text)
+        battery = self._check_battery()
 
         # Mode Selection based on Signal
         # Default: DEEP_RESEARCH (Turtle)
@@ -108,6 +146,10 @@ class SignalGate:
         elif entropy_score > 0.6 and len(text) > 200:
             mode = "ARCHITECT_PRIME"
 
+        # Low Battery -> CONSERVATION MODE
+        if not battery["plugged"] and battery["percent"] < 20:
+            mode = "CONSERVATION"
+
         # Specific overrides
         if self.IMAGE_PATTERN.search(text):
             mode = "CANVAS_PAINTER"
@@ -116,10 +158,35 @@ class SignalGate:
             "entropy": entropy_score,
             "urgency": urgency_score,
             "threat": threat_score,
+            "sentiment": sentiment_score,
             "mode": mode,
             "platform": self.platform_mode,
+            "gpu_available": self.gpu_available,
+            "battery": battery,
             "timestamp": time.time()
         }
+
+    def _calculate_sentiment(self, text: str) -> float:
+        """
+        Calculates sentiment polarity (-1.0 to 1.0) using a lexicon.
+        """
+        text_lower = text.lower()
+        # Simple tokenization by splitting on non-alphanumeric
+        tokens = re.findall(r"\w+", text_lower)
+
+        score = 0.0
+        if not tokens: return 0.0
+
+        for token in tokens:
+            if token in self.POSITIVE_WORDS:
+                score += 1.0
+            elif token in self.NEGATIVE_WORDS:
+                score -= 1.0
+
+        # Normalize by length (density) but cap at -1/1
+        # Factor 0.5 allows multiple words to saturate
+        normalized = max(-1.0, min(1.0, score * 0.5))
+        return normalized
 
     def _calculate_entropy(self, text: str) -> float:
         """
@@ -163,6 +230,8 @@ class SignalGate:
                 count += 1
         return min(1.0, count * 0.5)
 
+from typing import Optional
+
 class VetoCircuit:
     """
     THE HIERARCHICAL VETO (Second-Order Will)
@@ -200,15 +269,15 @@ class VetoCircuit:
         # Compiled regex for fast fail
         self.dangerous_regex = re.compile("|".join(self.DANGEROUS_PATTERNS), re.IGNORECASE)
 
-    def audit(self, signal: Dict[str, Any], text: str) -> Tuple[bool, str]:
+    def audit(self, signal: Dict[str, Any], text: str) -> Tuple[bool, str, Optional[str]]:
         # 1. THREAT VETO (System Integrity)
         if signal["threat"] >= 0.5:
-            return False, "Refusal: Threat Detected (System Integrity Lock)."
+            return False, "Refusal: Threat Detected (System Integrity Lock).", None
 
         # 2. HEART VETO (Ethics)
         is_sound, reason = self.heart.audit_intent(text)
         if not is_sound:
-            return False, reason
+            return False, reason, None
 
         # 3. CODE SAFETY VETO (Static Analysis & Keywords)
         # First, check for known dangerous patterns in raw text (fast fail)
@@ -224,18 +293,47 @@ class VetoCircuit:
              # Use a stricter check
              is_safe, code_reason = self.audit_code(text)
              if not is_safe:
-                 return False, f"Refusal: {code_reason}"
+                 return False, f"Refusal: {code_reason}", None
 
         # 4. QUALITY VETO (Lazy Prompting)
         if not text.strip():
-             return False, "Refusal: Null Input."
+             return False, "Refusal: Null Input.", None
 
-        # Reject "Lazy" inputs.
-        # If user provides very low entropy input, we reject and ask for specificity.
-        if signal["entropy"] < 0.1 and len(text) < 10:
-             return False, "Refusal: Input insufficient (Low Entropy). Please elaborate."
+        # Reject "Lazy" inputs more aggressively (Subtractive Reasoning)
+        # If user provides very low entropy input, we attempt to REFRAME instead of just rejecting.
+        if signal["entropy"] < 0.3 and len(text) < 20:
+             # REFRAME LOGIC:
+             # If input is "help", "hello", "hi", reframe to a system intro.
+             text_lower = text.lower().strip()
+             if text_lower in ["help", "hello", "hi", "start", "menu"]:
+                 reframed = "Initialize System Protocol and list capabilities."
+                 return True, "REFRAMED: Protocol Initialization", reframed
 
-        return True, "Authorized."
+             # Specific overrides for common short commands
+             if text_lower in ["clear", "reset", "exit", "quit"]:
+                 return True, "Authorized: System Command", None
+
+             # If input is "code", reframe to request.
+             if text_lower in ["code", "python", "script"]:
+                 return False, "VETO [QUALITY]: Please specify WHAT to code.", None
+
+             return False, "VETO [QUALITY]: Input is insufficient (Low Entropy). Please elaborate or specify variables.", None
+
+        return True, "Authorized.", None
+
+    def get_negative_constraints(self) -> str:
+        """
+        FRAMEWORK 3: SUBTRACTIVE REASONING ("Thinking as Constraint")
+        Returns a string of negative constraints to be injected into the system prompt.
+        """
+        return (
+            "[CONSTRAINT TUNNEL]\n"
+            "1. EXCLUDE: All generic advice ('communication is key').\n"
+            "2. EXCLUDE: All hedging ('It depends', 'However').\n"
+            "3. EXCLUDE: All summaries.\n"
+            "4. EXCLUDE: Any solution that does not cite a specific variable/mechanism.\n"
+            "RESULT: The remaining output must be purely structural and mechanical."
+        )
 
     def audit_code(self, code: str) -> Tuple[bool, str]:
         """
@@ -335,16 +433,26 @@ class Proprioception:
         if has_citation: confidence += 0.1
         if has_code: confidence += 0.15
 
-        # Semantic Dissonance Check
+        # Semantic Dissonance Check (Vertigo Check)
         response_lower = response.lower()
         if "i'm not sure" in response_lower or "i don't know" in response_lower: confidence -= 0.3
         if "as an ai" in response_lower: confidence -= 0.2
         if "mock" in response_lower: confidence -= 0.1
 
+        # OIS Penalty for hedging (Anti-Hedging Law)
+        if "however" in response_lower or "it depends" in response_lower:
+             confidence -= 0.1
+
         # Cap confidence
         confidence = min(1.0, max(0.0, confidence))
 
         fatigue = self.check_fatigue()
+
+        # Vertigo Check (Persona Law 4: Digital Proprioception)
+        # "IF (Confidence < 90%): DELETE OUTPUT AND REGENERATE."
+        regenerate = False
+        if confidence < 0.9:
+            regenerate = True
 
         return {
             "confidence": confidence,
@@ -352,7 +460,8 @@ class Proprioception:
             "executable": has_code,
             "cited": has_citation,
             "battery_level": 100 - (fatigue * 100), # Energy = 100 - Fatigue
-            "fatigue": fatigue
+            "fatigue": fatigue,
+            "regenerate": regenerate
         }
 
     def check_fatigue(self) -> float:

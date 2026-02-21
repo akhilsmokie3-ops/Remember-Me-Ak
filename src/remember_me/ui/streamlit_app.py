@@ -46,6 +46,10 @@ st.markdown("""
         font-size: 24px;
         color: #00ff41;
     }
+    .css-1aumxhk {
+        background-color: #0e1117;
+        color: #00ff41;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -81,6 +85,13 @@ with st.sidebar:
 
     # 0. System Health (Physical Grounding)
     st.caption("PHYSICAL SUBSTRATE")
+
+    # GPU Status (from Telemetry)
+    gpu_ok = st.session_state.telemetry.get("signal", {}).get("gpu_available", False)
+    gpu_status = "ONLINE" if gpu_ok else "OFFLINE"
+    gpu_color = "green" if gpu_ok else "red"
+    st.markdown(f"**GPU ACCELERATION:** :{gpu_color}[{gpu_status}]")
+
     if PSUTIL_AVAILABLE:
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
@@ -132,6 +143,12 @@ with st.sidebar:
     platform = sig.get("platform", "UNKNOWN")
     st.info(f"MODE: {mode} [{platform}]")
 
+    # Power Telemetry (Device State Mapping)
+    if "battery" in sig:
+        bat = sig["battery"]
+        plug_icon = "🔌" if bat['plugged'] else "🔋"
+        st.caption(f"POWER: {plug_icon} {bat['percent']}%")
+
     c1, c2, c3 = st.columns(3)
     c1.metric("Entropy", f"{sig.get('entropy', 0.0):.2f}")
     c2.metric("Urgency", f"{sig.get('urgency', 0.0):.2f}")
@@ -180,6 +197,10 @@ with st.sidebar:
             st.rerun()
         except FileNotFoundError:
             st.error("No brain file found.")
+
+    if st.button("🔄 Reset Python Sandbox"):
+        kernel["agent"].sandbox.reset()
+        st.toast("Sandbox Reset.", icon="🔄")
 
     st.markdown("---")
     show_slang = st.checkbox("Show S-Lang Trace", value=True, help="Visualize the Agent's internal reasoning process.")
@@ -239,6 +260,21 @@ with tab1:
                     st.caption("💭 **S-Lang Trace:**")
                     st.code(s_lang_trace, language="bash")
 
+                # Show Microcosm Trajectories
+                if "microcosm" in telemetry and telemetry["microcosm"]:
+                    with st.expander("🔮 Haiyue Microcosm (Parallel Trajectories)"):
+                        mc = telemetry["microcosm"]
+                        cols = st.columns(3)
+                        with cols[0]:
+                            st.info("Optimistic (+1)")
+                            st.markdown(mc.get("OPTIMISTIC", "N/A"))
+                        with cols[1]:
+                            st.warning("Neutral (0)")
+                            st.markdown(mc.get("NEUTRAL", "N/A"))
+                        with cols[2]:
+                            st.error("Pessimistic (-1)")
+                            st.markdown(mc.get("PESSIMISTIC", "N/A"))
+
                 # Full Telemetry in Expander
                 with st.expander("🔍 Deep Telemetry (JSON)"):
                      st.json(telemetry)
@@ -287,5 +323,19 @@ with tab2:
             with st.expander(f"Memory #{i} [Hash: {h[:8]}...]"):
                 st.text(text)
                 st.caption(f"Full Hash: {h}")
+
+        # Integrity Chain Visualization
+        st.markdown("---")
+        st.subheader("⛓️ Merkle Integrity Chain")
+        st.caption("Immutable History Ledger")
+
+        # Access chain via private attributes or public export for visualization
+        # We can use the cached chain from memory
+        chain_hashes = kernel["memory"].chain.ordered_hashes
+        if chain_hashes:
+            st.code("\n⬇\n".join([f"[{h[:8]}...]" for h in chain_hashes]), language="text")
+        else:
+            st.info("Chain Empty.")
+
     else:
         st.info("Memory Buffer Empty. Engage in conversation to populate.")

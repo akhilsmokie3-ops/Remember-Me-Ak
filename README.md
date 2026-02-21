@@ -61,7 +61,14 @@ Remember-Me is a military-grade, offline "Second Brain" that lives entirely on y
 
 ---
  
-## 🧠 THE ARCHITECTURE
+## 🧠 THE ARCHITECTURE (V112.0 UPGRADE)
+
+### 0. The Virtual Nervous System (Core)
+Implements ARK OMEGA-POINT Frameworks:
+*   **Signal Gate:** Adaptor layer that senses Entropy, Urgency, Threat, and Battery state.
+*   **Veto Circuit:** Second-Order Will that rejects lazy or harmful inputs (Heart > Brain).
+*   **Proprioception:** Digital self-sensing that triggers regeneration if confidence < 90%.
+*   **Haiyue Microcosm:** Active simulation of Optimistic/Neutral/Pessimistic timelines.
 
 ### 1. The Kernel (`src/remember_me/kernel.py`)
 The central orchestrator that binds Memory (CSNP), Logic (Engine), and Agency (Tools). It ensures all thoughts are verified against the Merkle Integrity Chain.

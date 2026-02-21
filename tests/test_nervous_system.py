@@ -22,7 +22,8 @@ class TestNervousSystem(unittest.TestCase):
         self.assertEqual(signal["mode"], "WAR_SPEED")
 
         # Test Entropy
-        text = "aaaaa bbbbb"
+        # Use a longer repetitive string for low entropy, as small strings don't compress well.
+        text = "aaaaa bbbbb " * 20
         signal = self.signal_gate.analyze(text)
         self.assertTrue(signal["entropy"] < 0.5)
 

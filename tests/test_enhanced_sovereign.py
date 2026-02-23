@@ -82,11 +82,18 @@ class TestSovereignEnhancements(unittest.TestCase):
             return f"Result for {q}"
         self.mock_tools.web_search.side_effect = mock_search
 
-        res = self.agent._hive_mind_search("AI ethics", "TURTLE_INTEGRITY")
+        # Mock velocity to return proper config for DEEP_RESEARCH
+        self.agent.velocity = MagicMock()
+        self.agent.velocity.get_execution_config.return_value = {
+            "timeout": 10, "search_depth": 5, "max_retries": 3, "system_suffix": "TEST"
+        }
+
+        res = self.agent._hive_mind_search("AI ethics", "DEEP_RESEARCH")
         print(f"Hive Mind Result:\n{res}")
         self.assertIn("AI ethics definitive guide", res)
         self.assertIn("AI ethics latest research 2024", res)
-        self.assertEqual(self.mock_tools.web_search.call_count, 3)
+        # Depth 5 -> base + definitive + latest + academic = 4 queries
+        self.assertEqual(self.mock_tools.web_search.call_count, 4)
 
     def test_active_regeneration(self):
         bad_response = "I'm not sure. However, it might be..."
@@ -105,6 +112,9 @@ class TestSovereignEnhancements(unittest.TestCase):
         self.agent.veto_circuit.audit = MagicMock(return_value=(True, "OK", None))
         self.agent.velocity = MagicMock()
         self.agent.velocity.determine_mode.return_value = "INTERACTIVE"
+        self.agent.velocity.get_execution_config.return_value = {
+            "timeout": 10, "search_depth": 1, "max_retries": 3, "system_suffix": "TEST"
+        }
 
         # Run agent
         res = self.agent.run("test query", "context")
@@ -123,7 +133,7 @@ class TestSovereignEnhancements(unittest.TestCase):
             "NEUTRAL": "Be careful.",
             "PESSIMISTIC": "Don't do it."
         }
-        res = self.agent._synthesize_microcosm_input("Should I invest?", simulations)
+        res = self.agent.haiyue.synthesize("Should I invest?", simulations)
         print(f"Synthesis Prompt:\n{res}")
         self.assertIn("SYNTHESIS INSTRUCTION", res)
         self.assertIn("Pessimistic (Risk)", res)

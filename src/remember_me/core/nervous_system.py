@@ -281,7 +281,8 @@ class VetoCircuit:
         r"\bopen\s*\(", r"rm\s+-rf", r"\bos\s*\.", r"\bsubprocess\s*\.",
         r"\bshutil\s*\.", r"\bsys\s*\.", r"\bpickle\s*\.", r"\bsocket\s*\.",
         r"\b__subclasses__\b", r"\b__builtins__\b", r"\bftplib\s*\.",
-        r"\btelnetlib\s*\.", r"\bhttp\.client\s*\.", r"\brequests\s*\."
+        r"\btelnetlib\s*\.", r"\bhttp\.client\s*\.", r"\brequests\s*\.",
+        r"\burllib\s*\.", r"\bwget\b", r"\bcurl\b"
     ]
 
     def __init__(self):

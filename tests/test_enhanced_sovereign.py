@@ -44,7 +44,7 @@ class TestSovereignEnhancements(unittest.TestCase):
 
     def test_veto_dangerous_code(self):
         dangerous_code = "import os; os.system('rm -rf /')"
-        signal = {"entropy": 0.5, "threat": 0.0, "urgency": 0.0}
+        signal = {"entropy": 0.5, "threat": 0.0, "urgency": 0.0, "mode": "TEST"}
         accepted, reason, _ = self.veto_circuit.audit(signal, dangerous_code)
         self.assertFalse(accepted)
 
@@ -88,7 +88,7 @@ class TestSovereignEnhancements(unittest.TestCase):
             "timeout": 10, "search_depth": 5, "max_retries": 3, "system_suffix": "TEST"
         }
 
-        res = self.agent._hive_mind_search("AI ethics", "DEEP_RESEARCH")
+        res = self.agent._phase_2_retrieval("AI ethics", "DEEP_RESEARCH")
         print(f"Hive Mind Result:\n{res}")
         self.assertIn("AI ethics definitive guide", res)
         self.assertIn("AI ethics latest research 2024", res)

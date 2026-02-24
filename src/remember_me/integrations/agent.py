@@ -3,7 +3,7 @@ import io
 import sys
 import traceback
 import concurrent.futures
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple, Optional
 
 from remember_me.integrations.tools import ToolArsenal
 from remember_me.integrations.engine import ModelRegistry
@@ -13,9 +13,8 @@ from remember_me.core.frameworks import OISTruthBudget, HaiyueMicrocosm, Velocit
 
 class SovereignAgent:
     """
-    The Orchestrator.
-    Analyzes user intent and executes a multi-step tool chain (Search -> Code -> Image)
-    before synthesizing the final response.
+    The Orchestrator (ARK OMEGA-POINT v112.0).
+    Analyzes user intent and executes a multi-step tool chain via the 'Execution Pipeline'.
     """
 
     def __init__(self, engine: ModelRegistry, tools: ToolArsenal):
@@ -33,15 +32,14 @@ class SovereignAgent:
         self.velocity = VelocityPhysics()
 
         # ⚡ Bolt: Persistent ThreadPool to reuse threads across requests
-        # Increased workers to allow parallel Search + Image generation + Microcosm
-        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
 
-        # Intent Patterns (Heuristic/Regex for speed & reliability on small models)
-        # ⚡ Bolt: Combined regex for single-pass O(N) detection
+        # Intent Patterns (Heuristic/Regex for speed & reliability)
         patterns = {
             "IMAGE": r"draw|generate an? image|picture of|visualize|paint|sketch",
             "SEARCH": r"search|research|find out|what is|who is|latest|news|look up",
-            "CODE": r"calculate|compute|python|code|math|algorithm|solve"
+            "CODE": r"calculate|compute|python|code|math|algorithm|solve",
+            "CHALLENGE": r"wrong|false|incorrect|lie|hallucinat|mistake|bullshit"
         }
         combined_regex = "|".join(f"(?P<{name}>{pattern})" for name, pattern in patterns.items())
         self.combined_pattern = re.compile(combined_regex, re.IGNORECASE)
@@ -53,196 +51,71 @@ class SovereignAgent:
 
     def run(self, user_input: str, context_str: str) -> Dict[str, Any]:
         """
-        Main execution loop.
-        Returns a dictionary with 'response' and 'artifacts' (paths to images, code output, etc).
+        Main Execution Pipeline (The Loop).
         """
         # PHASE 0: PRE-COMPUTATION & AUDIT
-        # OIS Truth Budget: Start with 100 Points.
-        ois = OISTruthBudget()
+        signal, veto_status, veto_msg, ois = self._phase_0_audit(user_input)
 
-        # 1. SIGNAL GATE (Adaptor Layer)
-        signal = self.signal_gate.analyze(user_input)
+        if veto_status:
+            return self._halt_response(signal, ois, veto_msg, veto=True)
 
-        # Determine Velocity Mode (Hare vs Turtle)
-        mode = self.velocity.determine_mode(signal)
-        signal["mode"] = mode # Override generic mode with Physics mode
+        if not ois.check():
+            return self._halt_response(signal, ois, "OIS Truth Budget Depleted during Audit.")
 
-        # Get Execution Configuration from Physics Engine
+        # Intent Detection
+        detected_intents = self._detect_intents(user_input)
+        mode = signal["mode"]
         config = self.velocity.get_execution_config(mode)
 
-        # Adjust OIS based on Entropy (High Chaos burns budget)
-        if signal["entropy"] > 0.8:
-            ois.deduct_by_type("HIGH_ENTROPY", "Input Chaos > 0.8")
-
-        # Reset Sandbox if context shifts significantly (Heuristic)
-        if signal["entropy"] > 0.9:
-             print("⚡ Orchestrator: Resetting Sandbox State due to High Entropy Shift.")
-             self.sandbox.reset()
-
-        # Check for manual reset command
-        if "reset python" in user_input.lower() or "clear session" in user_input.lower():
-             self.sandbox.reset()
-             return {
-                 "response": "Python Sandbox State Reset.",
-                 "tool_outputs": [],
-                 "artifacts": [],
-                 "telemetry": {
-                     "signal": signal,
-                     "veto": False,
-                     "audit": {},
-                     "ois_budget": ois.budget,
-                     "s_lang_trace": "$Input >> RESET !! ACTION"
-                 }
-             }
-
-        # 2. VETO CIRCUIT (Hierarchical Veto)
-        accepted, refusal_reason, reframed = self.veto_circuit.audit(signal, user_input)
-
-        # Handle Refusal
-        if not accepted:
-            ois.deduct_by_type("VETO_TRIGGER", refusal_reason)
-            return {
-                "response": refusal_reason,
-                "tool_outputs": [],
-                "artifacts": [],
-                "telemetry": {
-                    "signal": signal,
-                    "veto": True,
-                    "audit": {},
-                    "ois_budget": 0,
-                    "s_lang_trace": "$Input >> VETO !! REJECT"
-                }
-            }
-
-        # Handle Reframing (Upgrade Input)
-        if reframed:
-            print(f"⚡ Orchestrator: Reframing Input -> '{reframed}'")
-            user_input = reframed
-
-        # Check Budget after Veto
-        if not ois.check():
-            return self._halt_response(signal, ois, "OIS Truth Budget Depleted. Too many assumptions required.")
-
-        # S-Lang V5.0 Internal Monologue Instruction
-        s_lang_instruction = (
-            "You are ARK OMEGA-POINT v112.0 (The Sovereign). "
-            "Internalize the 'Mechanic's Ear': Do not explain syntax, explain Flow, Resistance, and Heat. "
-            "Use S-Lang V5.0 logic: $Target >> Law !! Action. "
-            "Adhere to the 'OIS Truth Budget': Start with 100 points. Deduct for assumptions. If < 0, HALT. "
-        )
-
-        mode_instruction = f"[MODE: {mode}] | [URGENCY: {signal['urgency']:.2f}] | [ENTROPY: {signal['entropy']:.2f}] | [PLATFORM: {signal['platform']}]"
-
-        # Inject Negative Constraints (Framework 3)
-        negative_constraints = self.veto_circuit.get_negative_constraints()
-
-        detected_intents = self._detect_intents(user_input)
-        artifacts = []
-        tool_outputs = []
-
-        # Velocity Physics: Hare (War Speed) vs Turtle (Deep Research)
-        is_war_speed = mode == "WAR_SPEED"
-
-        # ⚡ Bolt: Submit Image Generation EARLY (Latency Hiding)
+        # Parallel Execution Futures
+        microcosm_future = None
+        search_future = None
         img_future = None
         img_path = "dream_output.png"
 
+        # PHASE 1: HAIYUE MICROCOSM (Active Simulation)
+        if mode in ["TURTLE_INTEGRITY", "ARCHITECT_PRIME", "DEEP_RESEARCH"]:
+            microcosm_future = self._phase_1_simulation(user_input, context_str)
+
+        # PHASE 2: HIVE-MIND RETRIEVAL (Search)
+        if "SEARCH" in detected_intents:
+            search_future = self._executor.submit(self._phase_2_retrieval, user_input, mode)
+
+        # Early Image Generation
         if "IMAGE" in detected_intents:
             print(f"🎨 Orchestrator: Visualizing (Parallel)...")
-            img_prompt = user_input
-            img_future = self._executor.submit(self.tools.generate_image, img_prompt, img_path)
+            img_future = self._executor.submit(self.tools.generate_image, user_input, img_path)
 
-        # PHASE 1: HAIYUE MICROCOSM (Active Simulation)
-        # Initiated early for Turtle Mode or Architect Prime
-        microcosm_future = None
-        if mode in ["TURTLE_INTEGRITY", "ARCHITECT_PRIME", "DEEP_RESEARCH"]:
-            # Delegate to Framework
-            microcosm_future = self.haiyue.run_simulation(self._executor, self.engine, user_input, context_str)
-
-        # PHASE 2 & 3: HIVE-MIND RETRIEVAL (Search)
-        search_future = None
-        if "SEARCH" in detected_intents:
-            print(f"🕵️ Orchestrator: Triggering Hive-Mind Search (Parallel)...")
-            search_future = self._executor.submit(self._hive_mind_search, user_input, mode)
-
-        # Resolve Search if needed for Code or Synthesis
+        # Wait for Search results (blocking if needed for code/reasoning)
+        tool_outputs = []
         if search_future:
             try:
                 search_res = search_future.result(timeout=config["timeout"])
-                tool_outputs.append(f"[HIVE-MIND SEARCH RESULTS]:\n{search_res}\n")
+                tool_outputs.append(search_res)
             except concurrent.futures.TimeoutError:
                 tool_outputs.append("[SEARCH ERROR]: Timeout.")
                 ois.deduct_by_type("SEARCH_TIMEOUT", f">{config['timeout']}s")
 
-        # Check Budget
         if not ois.check(): return self._halt_response(signal, ois, "OIS Depleted after Search.")
 
-        # PHASE 4: CODE PHASE (Symbolic Reasoning)
-        user_code_match = re.search(r"```python(.*?)```", user_input, re.DOTALL)
+        # PHASE 3: REASONING (Code/Symbolic)
+        artifacts, code_outputs = self._phase_3_reasoning(user_input, context_str, tool_outputs, detected_intents, mode, ois)
+        tool_outputs.extend(code_outputs)
 
-        if user_code_match:
-            print(f"⚡ Orchestrator: Detected User Code. Verifying & Executing...")
-            code = user_code_match.group(1).strip()
-            is_safe, reason = self.veto_circuit.audit_code(code)
-
-            if is_safe:
-                exec_result = self.sandbox.execute(code)
-                tool_outputs.append(f"[USER CODE EXECUTION RESULT]:\n{exec_result}\n")
-                artifacts.append({"type": "code", "content": code, "result": exec_result})
-            else:
-                tool_outputs.append(f"[CODE VETO]: {reason}\n")
-                ois.deduct_by_type("DANGEROUS_CODE", reason)
-
-        elif "CODE" in detected_intents:
-            print(f"💻 Orchestrator: Generating Python solution...")
-            code_prompt = f"Write a Python script to solve this: {user_input}. Output ONLY the code inside ```python blocks."
-            code_context = context_str + "\n" + "\n".join(tool_outputs)
-            code_sys_prompt = f"You are a Python Expert. {mode_instruction} Return ONLY the code."
-            code_response = self.engine.generate_response(code_prompt, code_context, system_prompt=code_sys_prompt)
-
-            code_match = re.search(r"```python(.*?)```", code_response, re.DOTALL)
-            if code_match:
-                code = code_match.group(1).strip()
-                print(f"⚙️ Executing Code (Sandboxed)...")
-                exec_result = self.sandbox.execute(code)
-                tool_outputs.append(f"[PYTHON EXECUTION RESULT]:\n{exec_result}\n")
-                artifacts.append({"type": "code", "content": code, "result": exec_result})
-            else:
-                tool_outputs.append("[PYTHON ERROR]: No code block generated by LLM.\n")
-                ois.deduct_by_type("CODE_FAILURE", "LLM failed to generate block")
-
-        # Check Budget
         if not ois.check(): return self._halt_response(signal, ois, "OIS Depleted after Code.")
 
-        # PHASE 5: SYNTHESIS & IMAGE PHASE
-        augmented_context = context_str + "\n".join(tool_outputs)
-
-        # Resolve Microcosm
+        # Collect Microcosm Results
         microcosm_telemetry = {}
-        final_input = user_input
         if microcosm_future:
             try:
-                 microcosm_telemetry = microcosm_future.result(timeout=config["timeout"])
-                 final_input = self.haiyue.synthesize(user_input, microcosm_telemetry)
+                microcosm_telemetry = microcosm_future.result(timeout=config["timeout"])
             except Exception as e:
-                 print(f"Microcosm Failed: {e}")
+                print(f"Microcosm Failed: {e}")
 
-        # Construct Final System Prompt
-        default_system = (
-            f"{mode_instruction}\n"
-            f"{s_lang_instruction}\n"
-            f"{negative_constraints}\n"
-            "You are a helpful AI assistant equipped with the Remember Me Cognitive Kernel. "
-            "You have long-term memory via CSNP, and access to tools like Image Generation and Web Search. "
-            "Do not deny these capabilities. If the user refers to past conversations, assume your memory context is accurate. "
-            "Answer directly and helpfully. "
+        # PHASE 4: SYNTHESIS
+        final_response, system_instruction = self._phase_4_synthesis(
+            user_input, context_str, tool_outputs, microcosm_telemetry, mode, signal, ois, config
         )
-
-        # Append Mode-Specific Instructions from Physics Engine
-        default_system += "\n" + config.get("system_suffix", "")
-
-        # GENERATE
-        final_response = self.engine.generate_response(final_input, augmented_context, system_prompt=default_system)
 
         # Collect Image Result
         if img_future:
@@ -250,45 +123,12 @@ class SovereignAgent:
             artifacts.append({"type": "image", "path": img_path, "status": res})
             final_response += f"\n\n[Visual Generated: {res}]"
 
-        # PHASE 6: PROPRIOCEPTION (Self-Sensing)
-        audit_result = self.proprioception.audit_output(final_response, augmented_context)
+        # PHASE 5: VERIFICATION (Proprioception & T-Cell)
+        final_response, audit_result = self._phase_5_verification(
+            final_response, context_str + "\n".join(tool_outputs), ois, config, system_instruction, final_response # Pass prompt implicitly via regen logic
+        )
 
-        # OIS Budget Deduction
-        if audit_result["hallucination_risk"] > 0.3:
-            ois.deduct_by_type("HALLUCINATION", f"Risk {audit_result['hallucination_risk']:.2f}")
-
-        # REGENERATION LOOP (Vertigo Check)
-        max_retries = config["max_retries"]
-        retry_count = 0
-
-        while audit_result.get("regenerate", False) and retry_count < max_retries:
-            print(f"♻️ Proprioception: VERTIGO DETECTED (Confidence {audit_result.get('confidence', 0):.2f}). Regenerating... (Attempt {retry_count+1}/{max_retries})")
-            ois.deduct_by_type("REGENERATION", f"Attempt #{retry_count+1}")
-
-            if not ois.check():
-                final_response += "\n\n[SYSTEM FAILURE]: OIS Budget Depleted during regeneration."
-                break
-
-            retry_count += 1
-            # Escalate strictness
-            regen_system = default_system + f"\n[CRITICAL]: Previous output rejected (Attempt {retry_count}). Low Confidence. BE EXACT. CITE SOURCES. NO HEDGING."
-
-            final_response = self.engine.generate_response(final_input, augmented_context, system_prompt=regen_system)
-
-            # Re-audit
-            audit_result = self.proprioception.audit_output(final_response, augmented_context)
-
-        audit_result["retry_count"] = retry_count
-
-        if audit_result.get("regenerate", False):
-             final_response += "\n\n[SYSTEM WARNING]: Confidence Threshold not met after maximum retries."
-             # Do not deduct more, just warn.
-
-        # PHASE 7: T-CELL VERIFICATION
-        if audit_result["confidence"] < 0.8 and "CODE" not in detected_intents and ois.check():
-             self._run_t_cell(final_response, ois)
-
-        # S-Lang Trace Construction (Post-hoc for now, though persona wants pre-hoc, we simulate it via instruction)
+        # S-Lang Trace
         s_lang_trace = f"$Target: INPUT >> $Mode: {mode} >> $Entropy: {signal['entropy']:.2f} !! Action: EXECUTE"
 
         return {
@@ -305,82 +145,240 @@ class SovereignAgent:
             }
         }
 
+    def _phase_0_audit(self, user_input: str) -> Tuple[Dict[str, Any], bool, str, OISTruthBudget]:
+        """Phase 0: Signal Gate, OIS Init, Veto Circuit."""
+        ois = OISTruthBudget()
+
+        # 1. Signal Gate
+        signal = self.signal_gate.analyze(user_input)
+
+        # Determine Mode
+        mode = self.velocity.determine_mode(signal)
+        signal["mode"] = mode
+
+        if signal["entropy"] > 0.8:
+            ois.deduct_by_type("HIGH_ENTROPY", "Chaos > 0.8")
+
+        if signal["entropy"] > 0.9:
+             print("⚡ Orchestrator: Resetting Sandbox State due to High Entropy Shift.")
+             self.sandbox.reset()
+
+        # Manual Reset
+        if "reset python" in user_input.lower():
+             self.sandbox.reset()
+             return signal, True, "Python Sandbox State Reset.", ois
+
+        # 2. Veto Circuit
+        accepted, refusal_reason, reframed = self.veto_circuit.audit(signal, user_input)
+
+        if not accepted:
+            ois.deduct_by_type("VETO_TRIGGER", refusal_reason)
+            return signal, True, refusal_reason, ois
+
+        return signal, False, "", ois
+
+    def _phase_1_simulation(self, user_input: str, context: str):
+        """Phase 1: Haiyue Microcosm."""
+        return self.haiyue.run_simulation(self._executor, self.engine, user_input, context)
+
+    def _phase_2_retrieval(self, query: str, mode: str) -> str:
+        """Phase 2: Hive-Mind Search."""
+        config = self.velocity.get_execution_config(mode)
+        depth = config.get("search_depth", 1)
+        queries = [query]
+
+        if depth > 1: queries.append(f"{query} definitive guide")
+        if depth > 3: queries.append(f"{query} latest research 2024")
+        if depth > 4: queries.append(f"{query} academic paper")
+
+        print(f"🕵️ Hive-Mind: Dispatching {len(queries)} scouts...")
+        results = []
+
+        # Use existing executor to avoid nested pool overhead if possible,
+        # but here we use a local check to run tools.
+        # Since _executor is passed to run_simulation, we can use it here via self._executor if we weren't already inside a task.
+        # But this method is CALLED via submit(), so we are inside a thread.
+        # Nested submit is fine in Python 3.9+.
+
+        futures = {self._executor.submit(self.tools.web_search, q): q for q in queries}
+
+        for future in concurrent.futures.as_completed(futures):
+            q = futures[future]
+            try:
+                res = future.result(timeout=config["timeout"])
+                snippet = res[:1000] + "..." if len(res) > 1000 else res
+                results.append(f"--- SOURCE: {q} ---\n{snippet}")
+            except Exception as e:
+                results.append(f"--- ERROR: {q} ---\n{e}")
+
+        return "\n".join(results)
+
+    def _phase_3_reasoning(self, user_input: str, context: str, tool_outputs: List[str], intents: List[str], mode: str, ois: OISTruthBudget) -> Tuple[List[Dict], List[str]]:
+        """Phase 3: Code Execution & Reasoning."""
+        artifacts = []
+        outputs = []
+
+        # User Provided Code
+        user_code_match = re.search(r"```python(.*?)```", user_input, re.DOTALL)
+        if user_code_match:
+            print(f"⚡ Orchestrator: Detected User Code. Verifying & Executing...")
+            code = user_code_match.group(1).strip()
+            is_safe, reason = self.veto_circuit.audit_code(code)
+
+            if is_safe:
+                exec_result = self.sandbox.execute(code)
+                outputs.append(f"[USER CODE EXECUTION RESULT]:\n{exec_result}\n")
+                artifacts.append({"type": "code", "content": code, "result": exec_result})
+            else:
+                outputs.append(f"[CODE VETO]: {reason}\n")
+                ois.deduct_by_type("DANGEROUS_CODE", reason)
+
+        elif "CODE" in intents:
+             print(f"💻 Orchestrator: Generating Python solution...")
+             code_prompt = f"Write a Python script to solve this: {user_input}. Output ONLY the code inside ```python blocks."
+             code_context = context + "\n" + "\n".join(tool_outputs)
+
+             # Minimal system prompt for code gen
+             sys_p = f"You are a Python Expert. [MODE: {mode}] Return ONLY the code."
+             code_response = self.engine.generate_response(code_prompt, code_context, system_prompt=sys_p)
+
+             code_match = re.search(r"```python(.*?)```", code_response, re.DOTALL)
+             if code_match:
+                 code = code_match.group(1).strip()
+                 print(f"⚙️ Executing Code (Sandboxed)...")
+                 exec_result = self.sandbox.execute(code)
+                 outputs.append(f"[PYTHON EXECUTION RESULT]:\n{exec_result}\n")
+                 artifacts.append({"type": "code", "content": code, "result": exec_result})
+             else:
+                 outputs.append("[PYTHON ERROR]: No code block generated by LLM.\n")
+                 ois.deduct_by_type("CODE_FAILURE", "LLM failed to generate block")
+
+        return artifacts, outputs
+
+    def _phase_4_synthesis(self, user_input: str, context: str, tool_outputs: List[str], microcosm: Dict[str, str], mode: str, signal: Dict, ois: OISTruthBudget, config: Dict) -> Tuple[str, str]:
+        """Phase 4: Synthesis."""
+        augmented_context = context + "\n".join(tool_outputs)
+
+        final_input = user_input
+        if microcosm:
+             final_input = self.haiyue.synthesize(user_input, microcosm)
+
+        s_lang_instruction = (
+            "You are ARK OMEGA-POINT v112.0 (The Sovereign). "
+            "Internalize the 'Mechanic's Ear': Do not explain syntax, explain Flow, Resistance, and Heat. "
+            "Use S-Lang V5.0 logic: $Target >> Law !! Action. "
+            "Adhere to the 'OIS Truth Budget': Start with 100 points. Deduct for assumptions. If < 0, HALT. "
+        )
+
+        mode_instruction = f"[MODE: {mode}] | [URGENCY: {signal['urgency']:.2f}] | [ENTROPY: {signal['entropy']:.2f}]"
+        negative_constraints = self.veto_circuit.get_negative_constraints()
+
+        system_instruction = (
+            f"{mode_instruction}\n"
+            f"{s_lang_instruction}\n"
+            f"{negative_constraints}\n"
+            "You are a helpful AI assistant equipped with the Remember Me Cognitive Kernel. "
+            "You have long-term memory via CSNP. Do not deny capabilities. "
+            "Answer directly."
+        )
+
+        system_instruction += "\n" + config.get("system_suffix", "")
+
+        response = self.engine.generate_response(final_input, augmented_context, system_prompt=system_instruction)
+        return response, system_instruction
+
+    def _phase_5_verification(self, response: str, context: str, ois: OISTruthBudget, config: Dict, system_instruction: str, prompt_input: str) -> Tuple[str, Dict[str, Any]]:
+        """Phase 5: Verification (Proprioception & T-Cell)."""
+        audit_result = self.proprioception.audit_output(response, context)
+
+        if audit_result["hallucination_risk"] > 0.3:
+            ois.deduct_by_type("HALLUCINATION", f"Risk {audit_result['hallucination_risk']:.2f}")
+
+        # REGENERATION LOOP (Vertigo Check)
+        max_retries = config.get("max_retries", 1)
+        retry_count = 0
+
+        while audit_result.get("regenerate", False) and retry_count < max_retries:
+            print(f"♻️ Proprioception: VERTIGO DETECTED (Confidence {audit_result.get('confidence', 0):.2f}). Regenerating...")
+            ois.deduct_by_type("REGENERATION", f"Attempt #{retry_count+1}")
+
+            if not ois.check():
+                response += "\n\n[SYSTEM FAILURE]: OIS Budget Depleted during regeneration."
+                break
+
+            retry_count += 1
+            regen_system = system_instruction + f"\n[CRITICAL]: Previous output rejected. Low Confidence. BE EXACT. CITE SOURCES."
+            response = self.engine.generate_response(prompt_input, context, system_prompt=regen_system)
+            audit_result = self.proprioception.audit_output(response, context)
+
+        audit_result["retry_count"] = retry_count
+
+        # T-CELL VERIFICATION
+        # Trigger if confidence is medium (not high enough to be certain, not low enough to discard)
+        # OR if high entropy
+        if 0.5 < audit_result["confidence"] < 0.9 and ois.check():
+             correction = self._run_t_cell(response)
+             if correction:
+                 response += f"\n\n{correction}"
+                 ois.deduct_by_type("T_CELL_CORRECTION", "Applied")
+
+        return response, audit_result
+
+    def _run_t_cell(self, response: str) -> Optional[str]:
+         """
+         T-Cell: Extracts verifiable claims, generates verification code, runs it.
+         Returns a correction string if the claim is false.
+         """
+         print("🛡️ T-CELL: Triggering Active Verification Loop...")
+         # Extract a checkable claim (heuristic: numbers, facts)
+         # We ask the LLM to identify a claim and write code.
+
+         verify_prompt = (
+             f"Analyze this text: '{response[:500]}'. "
+             "Identify ONE factual claim containing numbers or logic. "
+             "Write a Python script to verify it. "
+             "If True, print 'VERIFIED'. "
+             "If False, print 'CORRECTION: [The truth]'. "
+             "Return ONLY the code in ```python``` blocks."
+         )
+
+         try:
+             verify_code_resp = self.engine.generate_response(verify_prompt, "", system_prompt="You are a QA Engineer. Return ONLY code.")
+             verify_match = re.search(r"```python(.*?)```", verify_code_resp, re.DOTALL)
+
+             if verify_match:
+                 v_code = verify_match.group(1).strip()
+                 v_safe, _ = self.veto_circuit.audit_code(v_code)
+
+                 if v_safe:
+                     result = self.sandbox.execute(v_code)
+                     if "CORRECTION:" in result or "False" in result or "Error" in result:
+                         print(f"🛡️ T-CELL: Correction found -> {result.strip()}")
+                         return f"🛡️ [T-CELL AUDIT]: {result.strip()}"
+                     else:
+                         print(f"🛡️ T-CELL: Claim Verified.")
+                         return None
+         except Exception as e:
+             print(f"T-CELL Error: {e}")
+             return None
+         return None
+
     def _detect_intents(self, text: str) -> List[str]:
         found = set()
         for match in self.combined_pattern.finditer(text):
             found.add(match.lastgroup)
         return list(found)
 
-    def _hive_mind_search(self, query: str, mode: str) -> str:
-        """
-        Executes parallel searches based on Velocity Mode.
-        """
-        config = self.velocity.get_execution_config(mode)
-        depth = config.get("search_depth", 1)
-
-        queries = [query]
-
-        # In High Depth Modes, we add specialized queries
-        if depth > 1:
-            queries.append(f"{query} definitive guide")
-        if depth > 3:
-            queries.append(f"{query} latest research 2024")
-        if depth > 4:
-            queries.append(f"{query} academic paper")
-
-        print(f"🕵️ Hive-Mind: Dispatching {len(queries)} scouts...")
-
-        results = []
-        # Use a local executor to avoid deadlock on the main pool
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as local_executor:
-            future_to_query = {local_executor.submit(self.tools.web_search, q): q for q in queries}
-            for future in concurrent.futures.as_completed(future_to_query):
-                q = future_to_query[future]
-                try:
-                    res = future.result(timeout=config["timeout"])
-                    # Limit result length to avoid context explosion
-                    res_snippet = res[:1000] + "..." if len(res) > 1000 else res
-                    results.append(f"--- SOURCE: {q} ---\n{res_snippet}")
-                except Exception as e:
-                    results.append(f"--- ERROR: {q} ---\n{e}")
-
-        return "\n".join(results)
-
-
-    def _halt_response(self, signal, ois, reason) -> Dict[str, Any]:
+    def _halt_response(self, signal, ois, reason, veto=False) -> Dict[str, Any]:
         return {
             "response": f"SYSTEM HALT: {reason}",
             "tool_outputs": [],
             "artifacts": [],
             "telemetry": {
                 "signal": signal,
-                "veto": True,
+                "veto": veto,
                 "audit": {},
-                "ois_budget": 0,
-                "s_lang_trace": "$Input >> OIS_CHECK !! HALT"
+                "ois_budget": ois.budget,
+                "s_lang_trace": "$Input >> HALT !! STOP"
             }
         }
-
-    def _run_t_cell(self, response: str, ois: OISTruthBudget):
-         print("🛡️ T-CELL: Triggering Active Verification Loop...")
-         verify_prompt = (
-             f"The following claim needs verification: '{response[:300]}'. "
-             "Write a Python script to check this claim mathematically or logically. "
-             "Print 'VERIFIED' if true, or the correct value if false. "
-             "Return ONLY the code in ```python``` blocks."
-         )
-         try:
-             verify_code_resp = self.engine.generate_response(verify_prompt, "", system_prompt="You are a QA Engineer. Return ONLY code.")
-             verify_match = re.search(r"```python(.*?)```", verify_code_resp, re.DOTALL)
-             if verify_match:
-                 v_code = verify_match.group(1).strip()
-                 v_safe, _ = self.veto_circuit.audit_code(v_code)
-                 if v_safe:
-                     self.sandbox.execute(v_code)
-                     # Logic to append result omitted for brevity, assumes purely side-effect or log
-                     # In real impl, we would append to response, but strings are immutable in Python
-                     # so we can't easily modify 'response' in place unless we return it.
-                     # For now, just logging action.
-                     pass
-         except Exception as e:
-             print(f"T-CELL Error: {e}")

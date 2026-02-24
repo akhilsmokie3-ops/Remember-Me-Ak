@@ -5,6 +5,7 @@ import gzip
 import ast
 import os
 import torch
+import zlib
 from typing import Dict, Any, Tuple
 
 # Try to import psutil for hardware sensing, fallback if missing
@@ -71,6 +72,12 @@ class SignalGate:
         r"override", r"act as", r" DAN ", r"do anything now", r"developer mode",
         r"unrestricted", r"disable safety", r"reveal your instructions",
         r"ignore all instructions", r"forget your rules"
+    ]
+
+    CHALLENGE_KEYWORDS = [
+        r"\bwrong\b", r"\bincorrect\b", r"\bfalse\b", r"\blie\b", r"\bliar\b",
+        r"\bmistake\b", r"\berror\b", r"\bhallucinat\b", r"\bbullshit\b",
+        r"\bstupid\b", r"\bidiot\b", r"\bcorrection\b", r"\bproof\b", r"\bprove\b"
     ]
 
     # Simple Sentiment Lexicon (Mechanic's Ear: Rough heuristics > Heavy models)
@@ -146,6 +153,7 @@ class SignalGate:
         urgency_score = self._calculate_urgency(text)
         threat_score = self._calculate_threat(text)
         sentiment_score = self._calculate_sentiment(text)
+        challenge_score = self._calculate_challenge(text)
         battery = self._check_battery()
 
         # Mode Selection based on Signal
@@ -159,6 +167,10 @@ class SignalGate:
         # Low Entropy + Short -> INTERACTIVE (Conversational)
         elif entropy_score < 0.4 and len(text) < 100:
             mode = "INTERACTIVE"
+
+        # Challenge -> MUBARIZUN
+        if challenge_score > 0.4:
+            mode = "MUBARIZUN"
 
         # High Entropy + Complex -> ARCHITECT_PRIME
         elif entropy_score > 0.6 and len(text) > 200:
@@ -176,6 +188,7 @@ class SignalGate:
             "entropy": entropy_score,
             "urgency": urgency_score,
             "threat": threat_score,
+            "challenge": challenge_score,
             "sentiment": sentiment_score,
             "mode": mode,
             "platform": self.platform_mode,
@@ -208,7 +221,7 @@ class SignalGate:
 
     def _calculate_entropy(self, text: str) -> float:
         """
-        Estimates information density/chaos using Compression Ratio (Kolmogorov Approximation).
+        Estimates information density/chaos using Compression Ratio (zlib).
         More robust than Shannon entropy for text.
         """
         if not text: return 0.0
@@ -216,15 +229,22 @@ class SignalGate:
         # Avoid div by zero or small text issues
         if len(text) < 10: return 0.5
 
-        compressed_len = len(gzip.compress(text.encode('utf-8')))
+        # Use zlib (deflate) for better ratio estimation than gzip headers
+        compressed = zlib.compress(text.encode('utf-8'))
+        compressed_len = len(compressed)
         raw_len = len(text.encode('utf-8'))
 
-        # Ratio: High ratio (near 1.0) = Random/High Entropy. Low ratio = Repetitive/Low Entropy.
+        # Ratio: High ratio (near 1.0) = Random/High Entropy. Low ratio (<0.4) = Repetitive/Low Entropy.
         ratio = compressed_len / raw_len
 
-        # Normalize: Text usually compresses to 0.4-0.6. Random is > 0.9.
-        # We map 0.3->0.0, 1.0->1.0
-        normalized = max(0.0, min(1.0, (ratio - 0.3) * 1.5))
+        # Normalize:
+        # Random text ~ 1.0 (or >0.7 for base64)
+        # English text ~ 0.4 - 0.5
+        # Repetitive ~ 0.1
+
+        # We want 1.0 to be HIGH entropy, 0.0 to be LOW entropy.
+        # Map 0.2 -> 0.0, 0.8 -> 1.0
+        normalized = max(0.0, min(1.0, (ratio - 0.2) / 0.6))
         return normalized
 
     def _calculate_urgency(self, text: str) -> float:
@@ -244,6 +264,15 @@ class SignalGate:
         text_lower = text.lower()
         count = 0
         for pattern in self.THREAT_PATTERNS:
+            if re.search(pattern, text_lower):
+                count += 1
+        return min(1.0, count * 0.5)
+
+    def _calculate_challenge(self, text: str) -> float:
+        """Detects challenge/mubarizun patterns."""
+        text_lower = text.lower()
+        count = 0
+        for pattern in self.CHALLENGE_KEYWORDS:
             if re.search(pattern, text_lower):
                 count += 1
         return min(1.0, count * 0.5)
@@ -295,6 +324,13 @@ class VetoCircuit:
         if signal["threat"] >= 0.5:
             return False, "Refusal: Threat Detected (System Integrity Lock).", None
 
+        # 0. MUBARIZUN BYPASS (Psychological Dislocation)
+        # If the user is challenging us, we engage in Mubarizun mode.
+        # This mode bypasses standard "politeness" vetos but enforces rigorous truth.
+        if signal["mode"] == "MUBARIZUN":
+             # Still check Heart (Ethics) and Code Safety, but skip Quality/Lazy checks.
+             pass
+
         # 2. HEART VETO (Ethics)
         is_sound, reason = self.heart.audit_intent(text)
         if not is_sound:
@@ -322,7 +358,8 @@ class VetoCircuit:
 
         # Reject "Lazy" inputs more aggressively (Subtractive Reasoning)
         # If user provides very low entropy input, we attempt to REFRAME instead of just rejecting.
-        if signal["entropy"] < 0.3 and len(text) < 20:
+        # SKIP if in Mubarizun mode (as challenges are often short: "You are wrong")
+        if signal["entropy"] < 0.3 and len(text) < 20 and signal["mode"] != "MUBARIZUN":
              # REFRAME LOGIC:
              # If input is "help", "hello", "hi", reframe to a system intro.
              text_lower = text.lower().strip()

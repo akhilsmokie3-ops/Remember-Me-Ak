@@ -13,6 +13,13 @@ try:
 except ImportError:
     RESOURCE_LIMITS_AVAILABLE = False
 
+# Try to import psutil for memory monitoring
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+
 def _worker(conn: multiprocessing.connection.Connection, allowed_imports: Set[str]):
     """
     Persistent Worker process for executing code in a REPL-like environment.
@@ -47,21 +54,31 @@ def _worker(conn: multiprocessing.connection.Connection, allowed_imports: Set[st
         "vars": vars, # Useful for debugging
     }
 
+    # Forbidden modules blacklist (Network & System)
+    FORBIDDEN_MODULES = {
+        "socket", "http", "urllib", "requests", "ftplib", "telnetlib",
+        "xmlrpc", "subprocess", "shutil", "sys", "os"
+    }
+
     # Custom __import__ to whitelist allowed modules
     def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
         # Explicitly block socket and other network/system modules
-        if name in ["socket", "http", "urllib", "requests", "ftplib", "telnetlib"]:
-             raise ImportError(f"Network access ({name}) is strictly forbidden by the Sovereign Kernel.")
+        # Check if any part of the name matches forbidden modules
+        base_name = name.split('.')[0]
+
+        if base_name in FORBIDDEN_MODULES or name in FORBIDDEN_MODULES:
+             raise ImportError(f"Import of '{name}' is strictly forbidden by the Sovereign Kernel.")
 
         if name in allowed_imports:
             return __import__(name, globals, locals, fromlist, level)
 
         # Allow submodules of allowed packages (e.g., 'os.path' if 'os' was allowed, though it isn't here)
-        base_name = name.split('.')[0]
         if base_name in allowed_imports:
              return __import__(name, globals, locals, fromlist, level)
 
-        raise ImportError(f"Import of '{name}' is forbidden by the Sovereign Kernel.")
+        # Allow standard library modules that are generally safe if not in blacklist
+        # But for strictness, we default to deny unless explicit
+        raise ImportError(f"Import of '{name}' is forbidden by the Sovereign Kernel (Not Whitelisted).")
 
     safe_builtins["__import__"] = safe_import
 
@@ -81,7 +98,15 @@ def _worker(conn: multiprocessing.connection.Connection, allowed_imports: Set[st
 
             if msg == "RESET":
                 exec_globals = {"__builtins__": safe_builtins}
+                # Also clear sys.modules of any user loaded stuff if possible,
+                # but it's hard to track. We rely on re-init of exec_globals.
                 conn.send({"status": "RESET_OK"})
+                continue
+
+            if isinstance(msg, dict) and msg.get("command") == "MEMORY":
+                # Special command to get internal memory status if needed
+                # But parent can use psutil. This is just an echo.
+                conn.send({"status": "OK", "output": "Memory Check"})
                 continue
 
             # Execution Logic
@@ -101,6 +126,11 @@ def _worker(conn: multiprocessing.connection.Connection, allowed_imports: Set[st
 
                 output = redirected_output.getvalue()
                 conn.send({"status": "OK", "output": output if output else "[No Output]"})
+
+                # Cleanup: Enforce module blacklist again in case they found a way
+                for mod in list(sys.modules.keys()):
+                    if mod.split('.')[0] in FORBIDDEN_MODULES:
+                        del sys.modules[mod]
 
             except MemoryError:
                 conn.send({"status": "ERROR", "output": "Memory Limit Exceeded (RAM > 512MB)."})
@@ -196,6 +226,21 @@ class SecurePythonSandbox:
                 self.parent_conn.recv() # Wait for ack
         except:
             self._restart_worker()
+
+    def get_memory_info(self) -> Dict[str, Any]:
+        """Returns memory usage of the worker process (in bytes)."""
+        if not self.process or not self.process.is_alive():
+            return {"rss": 0, "vms": 0, "status": "dead"}
+
+        if not PSUTIL_AVAILABLE:
+            return {"error": "psutil not installed"}
+
+        try:
+            proc = psutil.Process(self.process.pid)
+            mem = proc.memory_info()
+            return {"rss": mem.rss, "vms": mem.vms, "status": "running"}
+        except Exception as e:
+            return {"error": str(e)}
 
     def _restart_worker(self):
         """Kills and restarts the worker process."""

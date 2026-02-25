@@ -362,27 +362,19 @@ class VetoCircuit:
              if not is_safe:
                  return False, f"Refusal: {code_reason}", None
 
-        # 4. QUALITY VETO (Lazy Prompting)
+        # 4. NULL INPUT CHECK
         if not text.strip():
              return False, "Refusal: Null Input.", None
 
-        # SKIP if in Mubarizun mode (as challenges are often short: "You are wrong")
+        # REFRAME common navigational keywords into actionable prompts
         if signal["mode"] != "MUBARIZUN":
-             # Use the dedicated Quality Audit
-             is_quality, quality_reason = self.audit_quality(text, signal["entropy"])
-
-             # Attempt Reframe for specific keywords before hard rejection
              text_lower = text.lower().strip()
              if text_lower in ["help", "hello", "hi", "start", "menu"]:
                  reframed = "Initialize System Protocol and list capabilities."
                  return True, "REFRAMED: Protocol Initialization", reframed
 
-             # Specific overrides for common short commands
              if text_lower in ["clear", "reset", "exit", "quit"]:
                  return True, "Authorized: System Command", None
-
-             if not is_quality:
-                 return False, quality_reason, None
 
         return True, "Authorized.", None
 
@@ -402,21 +394,10 @@ class VetoCircuit:
 
     def audit_quality(self, text: str, entropy: float) -> Tuple[bool, str]:
         """
-        Enforces 'Grandmaster Rigor'. Rejects lazy or low-effort inputs.
+        Quality annotation (non-blocking).
+        Short or vague inputs are always accepted — the LLM can infer intent.
+        This method is retained for telemetry/logging only.
         """
-        text_lower = text.lower().strip()
-        word_count = len(text_lower.split())
-
-        # 1. Length/Effort Check
-        if word_count < 3 and entropy < 0.2:
-             return False, "VETO [QUALITY]: Input too short/lazy. Specify variables."
-
-        # 2. Vague Logic Check
-        vague_terms = ["stuff", "thing", "idk", "maybe"]
-        for term in vague_terms:
-            if term in text_lower.split():
-                 return False, f"VETO [QUALITY]: Vague terminology detected ('{term}'). Be precise."
-
         return True, "Quality Sound"
 
     def audit_code(self, code: str) -> Tuple[bool, str]:

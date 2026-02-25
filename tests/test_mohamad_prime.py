@@ -47,12 +47,11 @@ class TestMohamadPrime(unittest.TestCase):
         self.assertTrue(accepted)
         self.assertIn("REFRAMED", reason)
 
-        # "do stuff" should be rejected by quality audit
-        # Wait, audit_quality is called inside audit.
-        # "do stuff" is 2 words. < 3 words and low entropy.
+        # "do stuff" is now accepted — short inputs are no longer rejected,
+        # the LLM infers intent
         accepted, reason, _ = self.veto_circuit.audit(signal, "do stuff")
-        self.assertFalse(accepted)
-        self.assertIn("VETO [QUALITY]", reason)
+        self.assertTrue(accepted)
+        self.assertEqual(reason, "Authorized.")
 
     def test_veto_circuit_framework_100(self):
         constraints = self.veto_circuit.get_negative_constraints()

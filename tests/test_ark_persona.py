@@ -59,13 +59,11 @@ class TestARKPersona(unittest.TestCase):
         self.assertTrue(is_sound)
         self.assertEqual(reason, "HEART: SOUND")
 
-    def test_veto_lazy_input(self):
-        """Test Second-Order Will (Lazy Veto)."""
+    def test_short_input_accepted(self):
+        """Test that short inputs are accepted — the LLM infers intent."""
         signal = {"mode": "DEEP_RESEARCH", "entropy": 0.1, "threat": 0.0, "urgency": 0.0}
         accepted, reason, _ = self.veto.audit(signal, "help me")
-        # Short lazy input should be rejected or reframed
-        # Either way, not a normal "Authorized" — it should fail quality check
-        self.assertTrue(not accepted or "Input insufficient" in reason or "Low" in reason)
+        self.assertTrue(accepted)
 
     def test_proprioception(self):
         """Test Digital Proprioception."""

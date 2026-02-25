@@ -138,7 +138,7 @@ Every input is processed through a layered defense:
    - **Threat Veto** — Blocks high-threat signals immediately
    - **Heart Veto** — Ethical audit (Truth, Justice, Mercy)
    - **Code Veto** — AST-level static analysis with forbidden import/attribute lists
-   - **Quality Veto** — Rejects or reframes lazy inputs
+   - **Intent Inference** — Short or casual inputs are always accepted; the LLM infers intent
 3. **OIS Truth Budget** — Starts at 100 points. Every assumption costs budget. If depleted, the system halts.
 4. **Proprioception** — Post-generation confidence audit. Triggers regeneration or T-Cell verification if output quality is low.
 

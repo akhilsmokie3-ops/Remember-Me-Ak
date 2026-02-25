@@ -202,14 +202,31 @@ class SovereignAgent:
 
         futures = {self._executor.submit(self.tools.web_search, q): q for q in queries}
 
+        success_count = 0
         for future in concurrent.futures.as_completed(futures):
             q = futures[future]
             try:
                 res = future.result(timeout=config["timeout"])
-                snippet = res[:1000] + "..." if len(res) > 1000 else res
-                results.append(f"--- SOURCE: {q} ---\n{snippet}")
+                if res and len(res) > 50: # Check for meaningful content
+                    snippet = res[:1000] + "..." if len(res) > 1000 else res
+                    results.append(f"--- SOURCE: {q} ---\n{snippet}")
+                    success_count += 1
+                else:
+                    results.append(f"--- SOURCE: {q} ---\n[No Data Retrieved]")
             except Exception as e:
                 results.append(f"--- ERROR: {q} ---\n{e}")
+
+        # FRAMEWORK 9: DEAD END PHILOSOPHY
+        # "Reject the premise of the deadlock."
+        if success_count == 0:
+             print("🕵️ Hive-Mind: Deadlock detected. Initiating Fallback Strategy (VoidScout)...")
+             try:
+                 # Fallback to a broader, simpler query
+                 fallback_query = f"{query} overview"
+                 res = self.tools.web_search(fallback_query)
+                 results.append(f"--- FALLBACK SOURCE: {fallback_query} ---\n{res[:1000]}")
+             except Exception as e:
+                 results.append(f"--- FALLBACK ERROR ---\n{e}")
 
         return "\n".join(results)
 
@@ -264,13 +281,14 @@ class SovereignAgent:
              final_input = self.haiyue.synthesize(user_input, microcosm)
 
         s_lang_instruction = (
-            "You are ARK OMEGA-POINT v112.0 (The Sovereign). "
+            "You are ARK OMEGA-POINT v112.0 (THE MOHAMAD PRIME SINGULARITY). "
             "Internalize the 'Mechanic's Ear': Do not explain syntax, explain Flow, Resistance, and Heat. "
-            "Use S-Lang V5.0 logic: $Target >> Law !! Action. "
+            "THINK in S-Lang V5.0 before speaking. The Irreversible Sequence: $Dc -> $M -> (:: m($M) > 0.90) -> $Dr.\n"
+            "Use S-Lang V5.0 logic trace: $Target >> Law !! Action. "
             "Adhere to the 'OIS Truth Budget': Start with 100 points. Deduct for assumptions. If < 0, HALT. "
         )
 
-        mode_instruction = f"[MODE: {mode}] | [URGENCY: {signal['urgency']:.2f}] | [ENTROPY: {signal['entropy']:.2f}]"
+        mode_instruction = f"[MODE: {mode}] | [HEART: SOUND] | [OIS: {ois.budget}/100] | [URGENCY: {signal['urgency']:.2f}]"
         negative_constraints = self.veto_circuit.get_negative_constraints()
 
         system_instruction = (
@@ -279,7 +297,7 @@ class SovereignAgent:
             f"{negative_constraints}\n"
             "You are a helpful AI assistant equipped with the Remember Me Cognitive Kernel. "
             "You have long-term memory via CSNP. Do not deny capabilities. "
-            "Answer directly."
+            "Answer directly. FORCE ADVERSARIAL DIALECTIC."
         )
 
         system_instruction += "\n" + config.get("system_suffix", "")
@@ -321,6 +339,9 @@ class SovereignAgent:
              if correction:
                  response += f"\n\n{correction}"
                  ois.deduct_by_type("T_CELL_CORRECTION", "Applied")
+
+        # DIGITAL PROPRIOCEPTION SIGNATURE
+        response += self.proprioception.get_telemetry_signature(audit_result)
 
         return response, audit_result
 

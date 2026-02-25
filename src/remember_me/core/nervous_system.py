@@ -93,6 +93,16 @@ class SignalGate:
     def _check_battery(self) -> Dict[str, Any]:
         """Checks battery status via psutil for Device State Mapping."""
         if not PSUTIL_AVAILABLE:
+            # Fallback: Check for a simulated battery file for testing "Device State Mapping"
+            if os.path.exists(".battery_status"):
+                 try:
+                     with open(".battery_status", "r") as f:
+                         content = f.read().strip()
+                         # Format: "85,True" (percent, plugged)
+                         parts = content.split(",")
+                         return {"percent": int(parts[0]), "plugged": parts[1].lower() == "true"}
+                 except:
+                     pass
             return {"percent": 100, "plugged": True}
         try:
             battery = psutil.sensors_battery()
@@ -356,12 +366,12 @@ class VetoCircuit:
         if not text.strip():
              return False, "Refusal: Null Input.", None
 
-        # Reject "Lazy" inputs more aggressively (Subtractive Reasoning)
-        # If user provides very low entropy input, we attempt to REFRAME instead of just rejecting.
         # SKIP if in Mubarizun mode (as challenges are often short: "You are wrong")
-        if signal["entropy"] < 0.3 and len(text) < 20 and signal["mode"] != "MUBARIZUN":
-             # REFRAME LOGIC:
-             # If input is "help", "hello", "hi", reframe to a system intro.
+        if signal["mode"] != "MUBARIZUN":
+             # Use the dedicated Quality Audit
+             is_quality, quality_reason = self.audit_quality(text, signal["entropy"])
+
+             # Attempt Reframe for specific keywords before hard rejection
              text_lower = text.lower().strip()
              if text_lower in ["help", "hello", "hi", "start", "menu"]:
                  reframed = "Initialize System Protocol and list capabilities."
@@ -371,11 +381,8 @@ class VetoCircuit:
              if text_lower in ["clear", "reset", "exit", "quit"]:
                  return True, "Authorized: System Command", None
 
-             # If input is "code", reframe to request.
-             if text_lower in ["code", "python", "script"]:
-                 return False, "VETO [QUALITY]: Please specify WHAT to code.", None
-
-             return False, "VETO [QUALITY]: Input is insufficient (Low Entropy). Please elaborate or specify variables.", None
+             if not is_quality:
+                 return False, quality_reason, None
 
         return True, "Authorized.", None
 
@@ -388,10 +395,29 @@ class VetoCircuit:
             "[CONSTRAINT TUNNEL]\n"
             "1. EXCLUDE: All generic advice ('communication is key').\n"
             "2. EXCLUDE: All hedging ('It depends', 'However').\n"
-            "3. EXCLUDE: All summaries.\n"
+            "3. EXCLUDE: All summaries. (FRAMEWORK 100: NEVER SUMMARIZE)\n"
             "4. EXCLUDE: Any solution that does not cite a specific variable/mechanism.\n"
             "RESULT: The remaining output must be purely structural and mechanical."
         )
+
+    def audit_quality(self, text: str, entropy: float) -> Tuple[bool, str]:
+        """
+        Enforces 'Grandmaster Rigor'. Rejects lazy or low-effort inputs.
+        """
+        text_lower = text.lower().strip()
+        word_count = len(text_lower.split())
+
+        # 1. Length/Effort Check
+        if word_count < 3 and entropy < 0.2:
+             return False, "VETO [QUALITY]: Input too short/lazy. Specify variables."
+
+        # 2. Vague Logic Check
+        vague_terms = ["stuff", "thing", "idk", "maybe"]
+        for term in vague_terms:
+            if term in text_lower.split():
+                 return False, f"VETO [QUALITY]: Vague terminology detected ('{term}'). Be precise."
+
+        return True, "Quality Sound"
 
     def audit_code(self, code: str) -> Tuple[bool, str]:
         """
@@ -540,3 +566,16 @@ class Proprioception:
             return 0.1
         except Exception:
             return 0.0
+
+    def get_telemetry_signature(self, audit_result: Dict[str, Any]) -> str:
+        """
+        Returns the Digital Proprioception footer string.
+        """
+        conf = audit_result.get("confidence", 0.0) * 100
+        batt = audit_result.get("battery_level", 100)
+        risk = audit_result.get("hallucination_risk", 0.0) * 100
+
+        return (
+            f"\n\n[DIGITAL PROPRIOCEPTION] "
+            f"CONFIDENCE: {conf:.1f}% | BATTERY: {batt}% | HALLUCINATION RISK: {risk:.1f}%"
+        )

@@ -39,6 +39,17 @@ class OISTruthBudget:
         reason = f"{action_type}: {details}" if details else action_type
         self.deduct(amount, reason)
 
+    def check_ledger(self, claim_cost: int = 5) -> bool:
+        """
+        FRAMEWORK 10: THE SEMANTIC LEDGER.
+        Every claim must PURCHASE the next claim.
+        Returns True if budget allows the transaction.
+        """
+        if self.budget >= claim_cost:
+            self.deduct(claim_cost, "SEMANTIC_LEDGER: Claim Verification")
+            return True
+        return False
+
     def check(self) -> bool:
         """Returns True if budget is positive, False if depleted (HALT)."""
         return self.budget > 0
@@ -72,38 +83,51 @@ class HaiyueMicrocosm:
         }
 
         def _execute_microcosm():
-             futures = {}
-             # Run sequentially inside this thread to avoid deadlock on the main pool if it's small?
-             # Or use a private pool.
-             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as sim_pool:
+             # Use a dedicated private pool for isolation
+             results = {}
+             with concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="Haiyue") as sim_pool:
+                 future_map = {}
                  for p_name, p_text in prompts.items():
-                     sys_p = f"You are a Simulation Engine. Mode: {p_name}. Output only the simulation."
-                     futures[p_name] = sim_pool.submit(engine.generate_response, p_text, context, system_prompt=sys_p)
+                     sys_p = f"You are a Simulation Engine. Mode: {p_name}. Output only the simulation. Be concise."
+                     # Submit task
+                     future_map[sim_pool.submit(engine.generate_response, p_text, context, system_prompt=sys_p)] = p_name
 
-                 local_results = {}
-                 for p_name, future in futures.items():
+                 # Wait for all with a hard timeout
+                 done, not_done = concurrent.futures.wait(future_map.keys(), timeout=30)
+
+                 for future in done:
+                     p_name = future_map[future]
                      try:
-                         local_results[p_name] = future.result(timeout=20)
+                         results[p_name] = future.result()
                      except Exception as e:
-                         local_results[p_name] = f"Simulation Failed: {e}"
+                         results[p_name] = f"Simulation Failed: {e}"
 
-             return local_results
+                 for future in not_done:
+                     p_name = future_map[future]
+                     results[p_name] = "Simulation Timeout"
+                     # We can't cancel running threads easily in Python, but we ignore the result.
+
+             return results
 
         return executor.submit(_execute_microcosm)
 
     def synthesize(self, user_input: str, simulations: Dict[str, str]) -> str:
         """
         Synthesizes the 3 trajectories into a single coherent prompt input.
+        FRAMEWORK 4.D: Select the Fastest Coherent Result.
         """
         return (
              f"User Input: {user_input}\n"
-             f"Simulated Trajectories (Use these to form a robust answer):\n"
-             f"[OPTIMISTIC]: {simulations.get('OPTIMISTIC', 'N/A')}\n"
-             f"[NEUTRAL]: {simulations.get('NEUTRAL', 'N/A')}\n"
-             f"[PESSIMISTIC]: {simulations.get('PESSIMISTIC', 'N/A')}\n"
-             "SYNTHESIS INSTRUCTION: You must weigh the Optimistic (Growth), Neutral (Reality), and Pessimistic (Risk) trajectories.\n"
-             "The final answer must be 'The Fastest Coherent Result' that mitigates the Pessimistic risks while capturing Optimistic value.\n"
-             "Output ONLY the final synthesized answer. Do not output the trajectories."
+             f"--- HAIYUE SIMULATION DATA ---\n"
+             f"[OPTIMISTIC (+1)]: {simulations.get('OPTIMISTIC', 'N/A')}\n"
+             f"[NEUTRAL (0)]: {simulations.get('NEUTRAL', 'N/A')}\n"
+             f"[PESSIMISTIC (-1)]: {simulations.get('PESSIMISTIC', 'N/A')}\n"
+             "------------------------------\n"
+             "SYNTHESIS INSTRUCTION: Apply 'Haiyue Fusion'.\n"
+             "1. MITIGATE: Address the risks identified in the Pessimistic trajectory.\n"
+             "2. ACCELERATE: Capture the value from the Optimistic trajectory.\n"
+             "3. GROUND: Use the Neutral trajectory for reality checking.\n"
+             "RESULT: Generate 'The Fastest Coherent Result'. Do not list the trajectories. Output the final consolidated answer directly."
         )
 
 class VelocityPhysics:

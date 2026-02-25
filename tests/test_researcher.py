@@ -16,7 +16,7 @@ class TestSovereignSearch(unittest.TestCase):
     def setUp(self):
         self.searcher = SovereignSearch()
 
-    @patch('requests.get')
+    @patch('remember_me.agents.researcher.requests.get')
     def test_search_basic(self, mock_get):
         # Mocking the first response (opensearch)
         mock_opensearch_res = MagicMock()
@@ -40,7 +40,7 @@ class TestSovereignSearch(unittest.TestCase):
         }
 
         def side_effect(url, params=None, **kwargs):
-            if params.get('action') == 'opensearch':
+            if params and params.get('action') == 'opensearch':
                 return mock_opensearch_res
             return mock_extract_res
 
@@ -51,7 +51,7 @@ class TestSovereignSearch(unittest.TestCase):
         self.assertIn("Title 1", results[0])
         self.assertIn("Extract for Title 1", results[0])
 
-    @patch('requests.get')
+    @patch('remember_me.agents.researcher.requests.get')
     def test_search_fallback(self, mock_get):
         # Force a failure in Strategy A
         mock_get.side_effect = Exception("API Down")

@@ -1,0 +1,34 @@
+# Desktop Agent Layer — Optional dependencies
+# Install with: pip install -r requirements-desktop.txt
+
+# System monitoring
+psutil>=5.9.0
+
+# Screen/keyboard automation
+pyautogui>=0.9.54
+
+# Screen brightness
+screen-brightness-control>=0.22.0
+
+# Webcam capture
+opencv-python>=4.8.0
+
+# Audio recording
+sounddevice>=0.4.6
+scipy>=1.11.0
+
+# Voice I/O
+SpeechRecognition>=3.10.0
+pyttsx3>=2.90
+
+# Wake word (offline)
+vosk>=0.3.45
+
+# Clipboard
+pyperclip>=1.8.0
+
+# Volume control (Windows)
+pycaw>=20230407
+
+# Telegram bot
+python-telegram-bot>=21.0

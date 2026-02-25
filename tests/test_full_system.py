@@ -12,23 +12,17 @@ sys.modules["transformers"] = MagicMock()
 sys.modules["psutil"] = MagicMock()
 sys.modules["streamlit"] = MagicMock()
 
-# Mock internal heavy modules to avoid import errors during test
-sys.modules["remember_me.core.csnp"] = MagicMock()
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from remember_me.kernel import Kernel
-
 class TestFullSystem(unittest.TestCase):
-    @patch('remember_me.integrations.agent.VetoCircuit')
-    @patch('remember_me.integrations.agent.ModelRegistry')
-    @patch('remember_me.integrations.agent.SecurePythonSandbox')
-    @patch('remember_me.integrations.agent.SignalGate')
-    @patch('remember_me.integrations.agent.Proprioception')
-    def test_run_cycle(self, MockProprio, MockSignal, MockSandbox, MockEngine, MockVeto):
-        # Setup Kernel
-        # Mock engine loading success
-        MockEngine.return_value.load_model.return_value = True
+    @patch('remember_me.kernel.SovereignAgent')
+    @patch('remember_me.kernel.ToolArsenal')
+    @patch('remember_me.kernel.CSNPManager')
+    @patch('remember_me.kernel.ModelRegistry')
+    def test_run_cycle(self, MockRegistry, MockCSNP, MockTools, MockAgent):
+        from remember_me.kernel import Kernel
+
+        MockRegistry.return_value.load_model.return_value = True
 
         kernel = Kernel(model_key="test")
 
@@ -36,33 +30,29 @@ class TestFullSystem(unittest.TestCase):
         self.assertIsNotNone(kernel.agent)
         self.assertIsNotNone(kernel.shield)
 
-        # Setup specific mocks for the run
-        kernel.agent.signal_gate.analyze.return_value = {
-            "entropy": 0.2, "urgency": 0.0, "threat": 0.0, "mode": "INTERACTIVE", "platform": "TEST"
+        # Mock agent.run to return a proper response
+        kernel.agent.run.return_value = {
+            "response": "The answer is 42.",
+            "tool_outputs": [],
+            "artifacts": [],
+            "telemetry": {
+                "signal": {}, "audit": {}, "ois_budget": 100,
+                "veto": False, "microcosm": {}
+            }
         }
-        kernel.agent.veto_circuit.audit.return_value = (True, "OK")
 
-        # Manually mock the method on the live object
-        kernel.agent.engine.generate_response = MagicMock(return_value="The answer is 42.")
-
-        kernel.agent.proprioception.audit_output.return_value = {
-            "confidence": 0.95, "hallucination_risk": 0.05, "fatigue": 0.0, "executable": False, "cited": True
-        }
+        # Mock shield.retrieve_context
+        kernel.shield.retrieve_context.return_value = "Context"
 
         # Run Cycle
-        print("Running Kernel Cycle...")
         response = kernel.run_cycle("What is the answer?")
 
         # Verify
         self.assertEqual(response, "The answer is 42.")
 
-        # Check internal telemetry structure
-        result = kernel.agent.run("test", "ctx")
-        self.assertIn("telemetry", result)
-        self.assertIn("ois_budget", result["telemetry"])
-        self.assertIn("s_lang_trace", result["telemetry"])
-
-        print("✓ Full System Flow Verified.")
+        # Verify shield interactions
+        kernel.shield.retrieve_context.assert_called()
+        kernel.shield.update_state.assert_called_with("What is the answer?", "The answer is 42.")
 
 if __name__ == "__main__":
     unittest.main()

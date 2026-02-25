@@ -3,17 +3,23 @@ import sys
 import os
 from unittest.mock import MagicMock, patch
 
-# Add src to path
+# Mock heavy dependencies
+sys.modules["torch"] = MagicMock()
+sys.modules["torch.nn"] = MagicMock()
+sys.modules["torch.nn.functional"] = MagicMock()
+sys.modules["transformers"] = MagicMock()
+sys.modules["requests"] = MagicMock()
+
 sys.path.append(os.path.abspath("src"))
 
 class TestKernel(unittest.TestCase):
-    @patch('remember_me.integrations.engine.ModelRegistry')
-    @patch('remember_me.core.csnp.CSNPManager')
-    @patch('remember_me.integrations.tools.ToolArsenal')
-    def test_kernel_init(self, MockTools, MockCSNP, MockRegistry):
+    @patch('remember_me.kernel.SovereignAgent')
+    @patch('remember_me.kernel.ToolArsenal')
+    @patch('remember_me.kernel.CSNPManager')
+    @patch('remember_me.kernel.ModelRegistry')
+    def test_kernel_init(self, MockRegistry, MockCSNP, MockTools, MockAgent):
         from remember_me.kernel import Kernel
 
-        # Mock dependencies
         MockRegistry.return_value.load_model.return_value = True
 
         k = Kernel(model_key="tiny")
@@ -28,10 +34,11 @@ class TestKernel(unittest.TestCase):
         self.assertIsNotNone(k.shield)
         self.assertIsNotNone(k.agent)
 
-    @patch('remember_me.integrations.engine.ModelRegistry')
-    @patch('remember_me.core.csnp.CSNPManager')
-    @patch('remember_me.integrations.tools.ToolArsenal')
-    def test_run_cycle(self, MockTools, MockCSNP, MockRegistry):
+    @patch('remember_me.kernel.SovereignAgent')
+    @patch('remember_me.kernel.ToolArsenal')
+    @patch('remember_me.kernel.CSNPManager')
+    @patch('remember_me.kernel.ModelRegistry')
+    def test_run_cycle(self, MockRegistry, MockCSNP, MockTools, MockAgent):
         from remember_me.kernel import Kernel
         k = Kernel(model_key=None)
 

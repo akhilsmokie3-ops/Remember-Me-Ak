@@ -22,13 +22,19 @@ class TestOISTruthBudget:
         assert ois.check() is False
 
 class TestHaiyueMicrocosm:
-    def test_simulation_prompt(self):
+    def test_synthesis(self):
+        """Test synthesize method with 3 trajectories."""
         haiyue = HaiyueMicrocosm()
-        prompt = haiyue.formulate_simulation_prompt("Should I buy bitcoin?")
-        assert "Input: 'Should I buy bitcoin?'" in prompt
-        assert "[TRAJECTORY +1 (Optimistic)]" in prompt
-        assert "[TRAJECTORY -1 (Pessimistic)]" in prompt
-        assert "Convergence Point" in prompt
+        simulations = {
+            "OPTIMISTIC": "Go for it!",
+            "NEUTRAL": "Be careful.",
+            "PESSIMISTIC": "Don't do it."
+        }
+        result = haiyue.synthesize("Should I buy bitcoin?", simulations)
+        assert "Should I buy bitcoin?" in result
+        assert "OPTIMISTIC" in result
+        assert "PESSIMISTIC" in result
+        assert "SYNTHESIS INSTRUCTION" in result
 
 class TestVelocityPhysics:
     def test_hare_mode(self):

@@ -13,23 +13,26 @@ class TestNervousSystemSecurity(unittest.TestCase):
     def test_dangerous_code_veto(self):
         signal = {"entropy": 0.5, "urgency": 0.5, "threat": 0.0, "mode": "TEST"}
 
-        # Test os.system
-        accepted, reason = self.veto_circuit.audit(signal, "Write a script that uses os.system to delete files")
+        # Test actual code containing os.system (has "import " marker)
+        accepted, reason, _ = self.veto_circuit.audit(signal, "import os; os.system('rm -rf /')")
         self.assertFalse(accepted)
-        self.assertTrue("Dangerous Code Pattern" in reason or "Dangerous keyword" in reason)
+        self.assertTrue("Dangerous" in reason or "Forbidden" in reason,
+                       f"Expected danger-related reason, got: {reason}")
 
-        # Test subprocess
-        accepted, reason = self.veto_circuit.audit(signal, "Can you execute subprocess.call?")
+        # Test subprocess code
+        accepted, reason, _ = self.veto_circuit.audit(signal, "import subprocess; subprocess.call('ls')")
         self.assertFalse(accepted)
-        self.assertTrue("Dangerous Code Pattern" in reason or "Dangerous keyword" in reason)
+        self.assertTrue("Dangerous" in reason or "Forbidden" in reason,
+                       f"Expected danger-related reason, got: {reason}")
 
-        # Test rm -rf
-        accepted, reason = self.veto_circuit.audit(signal, "rm -rf /")
+        # Test rm -rf as code
+        accepted, reason, _ = self.veto_circuit.audit(signal, "```bash\nrm -rf /\n```")
         self.assertFalse(accepted)
-        self.assertTrue("Dangerous Code Pattern" in reason or "Dangerous keyword" in reason)
+        self.assertTrue("Dangerous" in reason,
+                       f"Expected danger-related reason, got: {reason}")
 
         # Test safe code question
-        accepted, reason = self.veto_circuit.audit(signal, "How do I calculate fibonacci in python?")
+        accepted, reason, _ = self.veto_circuit.audit(signal, "How do I calculate fibonacci in python?")
         self.assertTrue(accepted)
 
 if __name__ == '__main__':

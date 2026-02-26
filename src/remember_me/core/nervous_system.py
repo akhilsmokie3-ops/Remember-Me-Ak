@@ -432,10 +432,19 @@ class VetoCircuit:
                     if node.func.id in self.FORBIDDEN_FUNCTIONS:
                         return False, f"Forbidden function call: {node.func.id}"
 
+                # Check for obfuscated function calls via string concat (e.g. exec("im" + "port"))
+                if isinstance(node.func, ast.Name) and node.func.id in ['eval', 'exec']:
+                    if node.args:
+                        arg_val = get_static_value(node.args[0])
+                        # If we can statically resolve the arg, check it against patterns
+                        if arg_val:
+                            if "import" in str(arg_val) or "__" in str(arg_val):
+                                return False, f"Forbidden obfuscated code execution: {arg_val}"
+
                 # Attribute calls: os.system()
                 elif isinstance(node.func, ast.Attribute):
                     if isinstance(node.func.value, ast.Name):
-                        if node.func.value.id in ["os", "subprocess", "shutil", "sys"]:
+                        if node.func.value.id in ["os", "subprocess", "shutil", "sys", "requests"]:
                             return False, f"Forbidden module call: {node.func.value.id}.{node.func.attr}"
 
                 # Dynamic calls: getattr(obj, 'attr')
@@ -444,6 +453,16 @@ class VetoCircuit:
                         attr_name = get_static_value(node.args[1])
                         if attr_name in self.FORBIDDEN_ATTRIBUTES or attr_name in self.FORBIDDEN_FUNCTIONS:
                             return False, f"Forbidden dynamic access to: {attr_name}"
+
+            # Check for Assignments that construct dangerous strings (Heuristic)
+            if isinstance(node, ast.Assign):
+                 for target in node.targets:
+                     if isinstance(target, ast.Name):
+                         val = get_static_value(node.value)
+                         if val and isinstance(val, str):
+                             # Exact match check to avoid false positives (e.g. "executive" contains "exec")
+                             if val in ["__import__", "exec", "eval", "compile"]:
+                                 return False, f"Suspicious string construction: {val}"
 
             # 2. Block Access to Internals
             if isinstance(node, ast.Attribute):

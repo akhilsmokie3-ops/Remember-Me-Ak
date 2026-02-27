@@ -18,6 +18,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"
 
 from remember_me.core.nervous_system import SignalGate, VetoCircuit, Proprioception
 from remember_me.integrations.agent import SovereignAgent
+import remember_me.core.nervous_system as ns
 
 class TestSovereignLogic(unittest.TestCase):
 
@@ -55,12 +56,27 @@ class TestSovereignLogic(unittest.TestCase):
         mock_battery.percent = 10
         mock_battery.power_plugged = False
 
-        # Patch psutil directly in the nervous_system module namespace
-        with patch('remember_me.core.nervous_system.psutil') as mock_psutil:
-            mock_psutil.sensors_battery.return_value = mock_battery
+        # Robust patching for psutil availability
+        original_psutil = getattr(ns, 'psutil', None)
+        original_avail = ns.PSUTIL_AVAILABLE
+
+        mock_psutil = MagicMock()
+        mock_psutil.sensors_battery.return_value = mock_battery
+
+        setattr(ns, 'psutil', mock_psutil)
+        ns.PSUTIL_AVAILABLE = True
+
+        try:
             gate = SignalGate()
             signal = gate.analyze("some input text for testing purposes here")
             self.assertEqual(signal["mode"], "CONSERVATION")
+        finally:
+            # Restore state
+            if original_psutil is not None:
+                setattr(ns, 'psutil', original_psutil)
+            else:
+                delattr(ns, 'psutil')
+            ns.PSUTIL_AVAILABLE = original_avail
 
     def test_veto_lazy_input(self):
         signal = {"entropy": 0.1, "urgency": 0.0, "threat": 0.0, "mode": "TEST"}

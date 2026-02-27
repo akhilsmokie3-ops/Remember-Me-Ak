@@ -7,6 +7,7 @@ CHANGES:
 - No import-time thread auto-start
 - Bounded history (max 1000 entries, configurable)
 - Explicit start_monitoring() / stop_monitoring()
+- OS check added for cross-platform stability (Windows only logic wrapped)
 """
 
 import ctypes
@@ -74,6 +75,9 @@ class ClipboardMonitor:
 
     def _get_clipboard_text(self) -> Optional[str]:
         """Read current clipboard text via Win32 API."""
+        if os.name != "nt":
+            return None
+
         CF_UNICODETEXT = 13
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
@@ -100,6 +104,8 @@ class ClipboardMonitor:
 
     def _get_clipboard_seq(self) -> int:
         """Get clipboard sequence number (changes on every clipboard update)."""
+        if os.name != "nt":
+            return 0
         return ctypes.windll.user32.GetClipboardSequenceNumber()
 
     def _monitor_loop(self):

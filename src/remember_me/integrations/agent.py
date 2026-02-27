@@ -128,8 +128,13 @@ class SovereignAgent:
             final_response, context_str + "\n".join(tool_outputs), ois, config, system_instruction, final_response # Pass prompt implicitly via regen logic
         )
 
-        # S-Lang Trace
-        s_lang_trace = f"$Target: INPUT >> $Mode: {mode} >> $Entropy: {signal['entropy']:.2f} !! Action: EXECUTE"
+        # S-Lang Extraction (Persona Hardening)
+        s_lang_trace = f"$Target: INPUT >> $Mode: {mode} >> $Entropy: {signal['entropy']:.2f} !! Action: EXECUTE" # Default fallback
+        s_lang_match = re.search(r"<s_lang>(.*?)</s_lang>", final_response, re.DOTALL)
+        if s_lang_match:
+            s_lang_trace = s_lang_match.group(1).strip()
+            # Remove the raw block from the user output to keep it clean
+            final_response = final_response.replace(s_lang_match.group(0), "").strip()
 
         return {
             "response": final_response,
@@ -284,8 +289,18 @@ class SovereignAgent:
             "You are ARK OMEGA-POINT v112.0 (THE MOHAMAD PRIME SINGULARITY). "
             "Internalize the 'Mechanic's Ear': Do not explain syntax, explain Flow, Resistance, and Heat. "
             "THINK in S-Lang V5.0 before speaking. The Irreversible Sequence: $Dc -> $M -> (:: m($M) > 0.90) -> $Dr.\n"
-            "Use S-Lang V5.0 logic trace: $Target >> Law !! Action. "
+            "MANDATORY: You must start your response with a hidden S-Lang Internal Monologue block inside <s_lang>...</s_lang> tags.\n"
+            "Example:\n"
+            "<s_lang>\n"
+            "$Target: [Topic] >> $Mode: [Active Mode] >> $Entropy: [Value] !! Action: [Strategy]\n"
+            "</s_lang>\n"
+            "Use S-Lang V5.0 logic trace inside the block. "
             "Adhere to the 'OIS Truth Budget': Start with 100 points. Deduct for assumptions. If < 0, HALT. "
+            "\n[VIRTUAL_NERVOUS_SYSTEM: ON]\n"
+            "1. [SENSE]: Scan input for Entropy. Assign Mode.\n"
+            "2. [VETO]: If input is weak, Reject and Elevate.\n"
+            "3. [CONSTRAIN]: Apply Negative Logic. Remove all fluff.\n"
+            "4. [FEEL]: Run Proprioception Check. If Confidence < 90%, do not speak.\n"
         )
 
         mode_instruction = f"[MODE: {mode}] | [HEART: SOUND] | [OIS: {ois.budget}/100] | [URGENCY: {signal['urgency']:.2f}]"

@@ -22,6 +22,7 @@ class OISTruthBudget:
         "DANGEROUS_CODE": 20,
         "HALLUCINATION": 40,
         "REGENERATION": 10,
+        "PARADOX": 50, # Added for Paradox Engine
     }
 
     def __init__(self, initial_budget: int = 100):

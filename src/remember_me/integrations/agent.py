@@ -10,6 +10,7 @@ from remember_me.integrations.engine import ModelRegistry
 from remember_me.core.nervous_system import SignalGate, VetoCircuit, Proprioception
 from remember_me.core.sandbox import SecurePythonSandbox
 from remember_me.core.frameworks import OISTruthBudget, HaiyueMicrocosm, VelocityPhysics
+from remember_me.core.paradox import ParadoxEngine
 
 class SovereignAgent:
     """
@@ -26,6 +27,7 @@ class SovereignAgent:
         self.veto_circuit = VetoCircuit()
         self.proprioception = Proprioception()
         self.sandbox = SecurePythonSandbox()
+        self.paradox_engine = ParadoxEngine()
 
         # ⚡ Framework Components
         self.haiyue = HaiyueMicrocosm()
@@ -44,6 +46,9 @@ class SovereignAgent:
         combined_regex = "|".join(f"(?P<{name}>{pattern})" for name, pattern in patterns.items())
         self.combined_pattern = re.compile(combined_regex, re.IGNORECASE)
 
+        # Local short-term memory buffer for paradox detection
+        self.short_term_memory: List[str] = []
+
     def shutdown(self):
         """Clean up resources."""
         self._executor.shutdown(wait=False)
@@ -54,6 +59,11 @@ class SovereignAgent:
         Main Execution Pipeline (The Loop).
         """
         # PHASE 0: PRE-COMPUTATION & AUDIT
+        # Update short term memory for paradox check (Bounded to last 10 interactions)
+        self.short_term_memory.append(user_input)
+        if len(self.short_term_memory) > 10:
+            self.short_term_memory.pop(0)
+
         signal, veto_status, veto_msg, ois = self._phase_0_audit(user_input)
 
         if veto_status:
@@ -61,6 +71,15 @@ class SovereignAgent:
 
         if not ois.check():
             return self._halt_response(signal, ois, "OIS Truth Budget Depleted during Audit.")
+
+        # Paradox Check
+        is_paradox = self.paradox_engine.check_for_paradox(user_input, self.short_term_memory)
+        paradox_resolution = None
+        if is_paradox:
+            paradox_resolution = self.paradox_engine.resolve({})
+            ois.deduct_by_type("PARADOX", "Causal Loop Detected")
+            # If paradox is severe, we might halt or branch. For now, we note it.
+            print(f"⚠️ {paradox_resolution}")
 
         # Intent Detection
         detected_intents = self._detect_intents(user_input)
@@ -123,6 +142,10 @@ class SovereignAgent:
             artifacts.append({"type": "image", "path": img_path, "status": res})
             final_response += f"\n\n[Visual Generated: {res}]"
 
+        # Append Paradox Resolution if triggered
+        if paradox_resolution:
+            final_response = f"[PARADOX RESOLUTION ACTIVE]\n{final_response}\n\n[TIMELINE BRANCHED]"
+
         # PHASE 5: VERIFICATION (Proprioception & T-Cell)
         final_response, audit_result = self._phase_5_verification(
             final_response, context_str + "\n".join(tool_outputs), ois, config, system_instruction, final_response # Pass prompt implicitly via regen logic
@@ -145,8 +168,10 @@ class SovereignAgent:
                 "veto": False,
                 "audit": audit_result,
                 "ois_budget": ois.budget,
+                "ois_history": ois.history,
                 "s_lang_trace": s_lang_trace,
-                "microcosm": microcosm_telemetry
+                "microcosm": microcosm_telemetry,
+                "paradox": is_paradox
             }
         }
 
@@ -415,6 +440,7 @@ class SovereignAgent:
                 "veto": veto,
                 "audit": {},
                 "ois_budget": ois.budget,
+                "ois_history": ois.history,
                 "s_lang_trace": "$Input >> HALT !! STOP"
             }
         }

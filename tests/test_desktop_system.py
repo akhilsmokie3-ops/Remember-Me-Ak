@@ -155,7 +155,13 @@ class TestMediaControl:
         result = control_media("playpause")
         assert "playpause" in result
 
-    def test_invalid_action(self):
+    @patch("remember_me.desktop.system_actions._pyautogui")
+    def test_invalid_action(self, mock_pa):
+        # We also need to patch _pyautogui here, otherwise control_media returns
+        # "pyautogui not available" before hitting the validation logic if pyautogui isn't installed.
+        from remember_me.desktop import system_actions
+        system_actions._pyautogui = mock_pa
+
         result = control_media("destroy")
         assert "Unknown" in result
 

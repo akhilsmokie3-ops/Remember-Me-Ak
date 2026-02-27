@@ -11,3 +11,4 @@ beautifulsoup4
 tqdm
 transformers
 accelerate
+pandas

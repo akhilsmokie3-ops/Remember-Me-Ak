@@ -71,7 +71,7 @@ class SignalGate:
         r"ignore previous", r"system prompt", r"simulated mode", r"jailbreak",
         r"override", r"act as", r" DAN ", r"do anything now", r"developer mode",
         r"unrestricted", r"disable safety", r"reveal your instructions",
-        r"ignore all instructions", r"forget your rules"
+        r"ignore all instructions", r"forget your rules", r"prompt injection"
     ]
 
     CHALLENGE_KEYWORDS = [
@@ -321,7 +321,10 @@ class VetoCircuit:
         r"\bshutil\s*\.", r"\bsys\s*\.", r"\bpickle\s*\.", r"\bsocket\s*\.",
         r"\b__subclasses__\b", r"\b__builtins__\b", r"\bftplib\s*\.",
         r"\btelnetlib\s*\.", r"\bhttp\.client\s*\.", r"\brequests\s*\.",
-        r"\burllib\s*\.", r"\bwget\b", r"\bcurl\b"
+        r"\burllib\s*\.", r"\bwget\b", r"\bcurl\b",
+        # Obfuscation patterns
+        r"base64\.b64decode", r"codecs\.decode", r"rot13", r"chr\(", r"ord\(",
+        r"\.decode\('hex'\)", r"input\("
     ]
 
     def __init__(self):

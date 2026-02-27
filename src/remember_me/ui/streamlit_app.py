@@ -2,6 +2,7 @@ import streamlit as st
 import time
 import os
 import sys
+import pandas as pd
 
 # Try to import psutil for hardware sensing, fallback if missing
 try:
@@ -50,6 +51,21 @@ st.markdown("""
         background-color: #0e1117;
         color: #00ff41;
     }
+    .haiyue-opt {
+        border-left: 3px solid #00ff41;
+        padding-left: 10px;
+        background-color: rgba(0, 255, 65, 0.1);
+    }
+    .haiyue-neu {
+        border-left: 3px solid #ffff00;
+        padding-left: 10px;
+        background-color: rgba(255, 255, 0, 0.1);
+    }
+    .haiyue-pes {
+        border-left: 3px solid #ff0000;
+        padding-left: 10px;
+        background-color: rgba(255, 0, 0, 0.1);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -76,7 +92,9 @@ if "telemetry" not in st.session_state:
         "signal": {"mode": "IDLE", "entropy": 0.0, "urgency": 0.0, "threat": 0.0, "platform": "UNKNOWN"},
         "audit": {"confidence": 0.0, "hallucination_risk": 0.0},
         "ois_budget": 100,
-        "s_lang_trace": ""
+        "ois_history": [],
+        "s_lang_trace": "",
+        "paradox": False
     }
 
 # --- SIDEBAR: NEURAL MONITORING ---
@@ -149,6 +167,12 @@ with st.sidebar:
     platform = sig.get("platform", "UNKNOWN")
     st.info(f"MODE: {mode} [{platform}]")
 
+    # Paradox Status
+    paradox_state = st.session_state.telemetry.get("paradox", False)
+    paradox_status = "⚠️ BRANCHING" if paradox_state else "STABLE"
+    paradox_color = "red" if paradox_state else "green"
+    st.markdown(f"**TIMELINE:** :{paradox_color}[{paradox_status}]")
+
     # Power Telemetry (Device State Mapping)
     if "battery" in sig:
         bat = sig["battery"]
@@ -214,7 +238,7 @@ with st.sidebar:
 # --- MAIN: COGNITIVE MATRIX ---
 st.title("REMEMBER ME // COGNITIVE MATRIX")
 
-tab1, tab2 = st.tabs(["💬 COGNITION", "🧠 MEMORY BANK"])
+tab1, tab2, tab3 = st.tabs(["💬 COGNITION", "🧠 MEMORY BANK", "📉 COGNITIVE ECONOMICS"])
 
 with tab1:
     # Display Chat History
@@ -266,20 +290,20 @@ with tab1:
                     st.caption("💭 **S-Lang Trace:**")
                     st.code(s_lang_trace, language="bash")
 
-                # Show Microcosm Trajectories
+                # Show Microcosm Trajectories (Enhanced Display)
                 if "microcosm" in telemetry and telemetry["microcosm"]:
-                    with st.expander("🔮 Haiyue Microcosm (Parallel Trajectories)"):
+                    with st.expander("🔮 Haiyue Microcosm (Parallel Trajectories)", expanded=True):
                         mc = telemetry["microcosm"]
                         cols = st.columns(3)
                         with cols[0]:
-                            st.info("Optimistic (+1)")
-                            st.markdown(mc.get("OPTIMISTIC", "N/A"))
+                            st.markdown('<div class="haiyue-opt"><strong>Optimistic (+1)</strong></div>', unsafe_allow_html=True)
+                            st.caption(mc.get("OPTIMISTIC", "N/A"))
                         with cols[1]:
-                            st.warning("Neutral (0)")
-                            st.markdown(mc.get("NEUTRAL", "N/A"))
+                            st.markdown('<div class="haiyue-neu"><strong>Neutral (0)</strong></div>', unsafe_allow_html=True)
+                            st.caption(mc.get("NEUTRAL", "N/A"))
                         with cols[2]:
-                            st.error("Pessimistic (-1)")
-                            st.markdown(mc.get("PESSIMISTIC", "N/A"))
+                            st.markdown('<div class="haiyue-pes"><strong>Pessimistic (-1)</strong></div>', unsafe_allow_html=True)
+                            st.caption(mc.get("PESSIMISTIC", "N/A"))
 
                 # Full Telemetry in Expander
                 with st.expander("🔍 Deep Telemetry (JSON)"):
@@ -350,3 +374,26 @@ with tab2:
 
     else:
         st.info("Memory Buffer Empty. Engage in conversation to populate.")
+
+with tab3:
+    st.header("Cognitive Economics")
+    st.caption("OIS Truth Budget & Paradox Telemetry")
+
+    ois_hist = st.session_state.telemetry.get("ois_history", [])
+    if ois_hist:
+        # Convert to DataFrame for visualization
+        # Reconstruct budget timeline (assuming start at 100)
+        current = 100
+        data = []
+        for event in ois_hist:
+            current -= event["amount"]
+            data.append({"reason": event["reason"], "budget": current, "cost": event["amount"]})
+
+        df = pd.DataFrame(data)
+        st.subheader("📉 Truth Budget Depletion Curve")
+        st.line_chart(df["budget"])
+
+        st.subheader("🧾 Transaction Ledger")
+        st.dataframe(df)
+    else:
+        st.info("No economic activity recorded yet.")

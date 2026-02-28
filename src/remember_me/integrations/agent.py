@@ -182,16 +182,24 @@ class SovereignAgent:
         # 1. Signal Gate
         signal = self.signal_gate.analyze(user_input)
 
+        # Dependency Audit (Framework 3: TRUTH-FIRST)
+        if re.search(r'\b(file|document|image)\b', user_input, re.IGNORECASE):
+             ois.deduct_by_type("DEPENDENCY_AUDIT", "User requested external file")
+             signal["dependency_audit"] = "WARNING: External file requested. Verifying presence in context..."
+
         # Determine Mode
         mode = self.velocity.determine_mode(signal)
         signal["mode"] = mode
 
-        if signal["entropy"] > 0.8:
-            ois.deduct_by_type("HIGH_ENTROPY", "Chaos > 0.8")
-
-        if signal["entropy"] > 0.9:
-             print("⚡ Orchestrator: Resetting Sandbox State due to High Entropy Shift.")
-             self.sandbox.reset()
+        if signal["entropy"] > 2.14:
+            if signal["entropy"] > 2.7:
+                print("⚡ Orchestrator: Resetting Sandbox State due to High Entropy Shift.")
+                self.sandbox.reset()
+            # We must return the tuple format expected by _phase_0_audit's caller
+            # Caller expects: signal, veto_status, veto_msg, ois
+            # _halt_response logic is inside run(), but _phase_0_audit just returns the status for run() to handle
+            # Actually, _phase_0_audit returns: Tuple[Dict[str, Any], bool, str, OISTruthBudget]
+            return signal, True, "System Halt: Universal Stability (Entropy > 2.14) exceeded.", ois
 
         # Manual Reset
         if "reset python" in user_input.lower():
@@ -337,7 +345,12 @@ class SovereignAgent:
             f"{negative_constraints}\n"
             "You are a helpful AI assistant equipped with the Remember Me Cognitive Kernel. "
             "You have long-term memory via CSNP. Do not deny capabilities. "
-            "Answer directly. FORCE ADVERSARIAL DIALECTIC."
+            "Answer directly. FORCE ADVERSARIAL DIALECTIC.\n"
+            "Structure your response EXACTLY with these sections: \n"
+            "1. META-HEADER (e.g. [MODE: X] | [HEART: SOUND])\n"
+            "2. THE EXCAVATION (Peel the problem across layers)\n"
+            "3. THE VERDICT (Direct Answer)\n"
+            "4. NEXT STEPS"
         )
 
         system_instruction += "\n" + config.get("system_suffix", "")
@@ -397,9 +410,10 @@ class SovereignAgent:
          verify_prompt = (
              f"Analyze this text: '{response[:500]}'. "
              "Identify ONE factual claim containing numbers or logic. "
+             "Ensure the claim is supported by 3 orthogonal sources (Framework 50). "
              "Write a Python script to verify it. "
-             "If True, print 'VERIFIED'. "
-             "If False, print 'CORRECTION: [The truth]'. "
+             "If True and triangulated, print 'VERIFIED'. "
+             "If False or lacking 3 sources, print 'CORRECTION: [The truth]'. "
              "Return ONLY the code in ```python``` blocks."
          )
 

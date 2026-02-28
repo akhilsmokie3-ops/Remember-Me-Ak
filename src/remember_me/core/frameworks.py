@@ -23,6 +23,7 @@ class OISTruthBudget:
         "HALLUCINATION": 40,
         "REGENERATION": 10,
         "PARADOX": 50, # Added for Paradox Engine
+        "DEPENDENCY_AUDIT": 10,
     }
 
     def __init__(self, initial_budget: int = 100):

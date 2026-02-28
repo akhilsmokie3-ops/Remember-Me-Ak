@@ -94,5 +94,22 @@ class TestSovereignAgentIntegration(unittest.TestCase):
             self.assertEqual(result["telemetry"]["ois_budget"], 0)
             self.assertIn("Refusal", result["response"])
 
+    def test_entropy_halt(self):
+        with patch.object(self.agent.signal_gate, 'analyze') as mock_analyze:
+            mock_analyze.return_value = {
+                "entropy": 2.5, "urgency": 0.5,
+                "threat": 0.0,
+                "sentiment": 0.0, "challenge": 0.0,
+                "mode": "SYNC_POINT", "platform": "TEST",
+                "gpu_available": False,
+                "battery": {"percent": 100, "plugged": True},
+                "timestamp": 0
+            }
+
+            result = self.agent.run("Tell me a story", "")
+
+            self.assertTrue(result["telemetry"]["veto"])
+            self.assertIn("System Halt: Universal Stability", result["response"])
+
 if __name__ == '__main__':
     unittest.main()

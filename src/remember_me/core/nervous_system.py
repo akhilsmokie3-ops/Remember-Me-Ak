@@ -255,7 +255,7 @@ class SignalGate:
         # We want 1.0 to be HIGH entropy, 0.0 to be LOW entropy.
         # Map 0.2 -> 0.0, 0.8 -> 1.0
         normalized = max(0.0, min(1.0, (ratio - 0.2) / 0.6))
-        return normalized
+        return normalized * 3.0
 
     def _calculate_urgency(self, text: str) -> float:
         """Detects urgency keywords using regex."""

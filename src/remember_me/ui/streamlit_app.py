@@ -3,6 +3,7 @@ import time
 import os
 import sys
 import pandas as pd
+import re
 
 # Try to import psutil for hardware sensing, fallback if missing
 try:
@@ -325,7 +326,24 @@ with tab1:
                             st.text(f"Result: {artifact['result']}")
 
                 # Final Response
-                message_placeholder.markdown(response)
+
+                # Try parsing the Output Standard
+                meta_match = re.search(r"1\.\s*META-HEADER\s*([\s\S]*?)(?=2\.\s*THE EXCAVATION|$)", response, re.IGNORECASE)
+                excavation_match = re.search(r"2\.\s*THE EXCAVATION\s*([\s\S]*?)(?=3\.\s*THE VERDICT|$)", response, re.IGNORECASE)
+                verdict_match = re.search(r"3\.\s*THE VERDICT\s*([\s\S]*?)(?=4\.\s*NEXT STEPS|$)", response, re.IGNORECASE)
+                next_steps_match = re.search(r"4\.\s*NEXT STEPS\s*([\s\S]*)", response, re.IGNORECASE)
+
+                if excavation_match and verdict_match:
+                    with message_placeholder.container():
+                        if meta_match:
+                            st.caption(f"🛡️ {meta_match.group(1).strip()}")
+                        with st.expander("🔍 THE EXCAVATION (Layer Peeling)"):
+                            st.markdown(excavation_match.group(1).strip())
+                        st.success(f"**THE VERDICT**\n\n{verdict_match.group(1).strip()}")
+                        if next_steps_match:
+                            st.info(f"**NEXT STEPS**\n\n{next_steps_match.group(1).strip()}")
+                else:
+                    message_placeholder.markdown(response)
 
                 # Audit Footer
                 if "audit" in telemetry:

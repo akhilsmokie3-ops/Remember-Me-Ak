@@ -115,6 +115,13 @@ class TestSovereignLogic(unittest.TestCase):
     def test_agent_microcosm_trigger(self):
         # Force Turtle Mode
         self.agent.velocity.determine_mode.return_value = "TURTLE_INTEGRITY"
+        # Mock signal gate so it doesn't trigger the entropy > 2.14 halt
+        self.agent.signal_gate.analyze = MagicMock(return_value={
+            "entropy": 1.0, "urgency": 0.0, "threat": 0.0, "challenge": 0.0,
+            "sentiment": 0.0, "mode": "TURTLE_INTEGRITY", "platform": "GEMINI",
+            "gpu_available": False, "battery": {"percent": 100, "plugged": True},
+            "timestamp": 0
+        })
         res = self.agent.run("complex question about quantum physics", "ctx")
         self.assertIn("microcosm", res["telemetry"])
 

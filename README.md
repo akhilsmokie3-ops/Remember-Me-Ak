@@ -159,4 +159,4 @@ pytest tests/ -v
 **MIT** — Sovereign code for sovereign minds.
 
 *Signed,*
-**The Sovereign Architect** *(Mohamad Al-Zawahreh)*
+**The Sovereign Architect** *(AKHIL P)

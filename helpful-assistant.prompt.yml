@@ -1,0 +1,23 @@
+name: Helpful Assistant
+description: A general-purpose helpful assistant that can answer questions and provide assistance
+model: openai/gpt-4.1
+modelParameters:
+  temperature: 1.0
+  top_p: 1.0
+messages:
+  - role: system
+    content: You are a helpful assistant.
+  - role: user
+    content: "{{input}}"
+testData:
+  - input: What is the capital of France?
+    expected: Paris
+  - input: How do I create a GitHub prompt file?
+    expected: Store prompts in YAML files with .prompt.yml or .prompt.yaml extension
+evaluators:
+  - name: Output should be helpful and relevant
+    string:
+      notEmpty: true
+  - name: Output should be a complete response
+    string:
+      minLength: 10
